@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Brand = require('../models/Brand');
 const User = require('../models/User');
-const { authenticateToken, requireRole, requirePlatformAdmin, loadBrandOwnership } = require('../middleware/auth');
+const { authenticateToken, requirePlatformAdmin, loadBrandAndCheckOwnership } = require('../middleware/auth');
 const { UploadService, uploadLogo } = require('../services/uploadService');
 const { body, param, validationResult } = require('express-validator');
 
@@ -340,7 +340,7 @@ router.post('/',
 // PUT /brands/:id - Update brand (requires ownership or platform admin)
 router.put('/:id',
   authenticateToken,
-  loadBrandOwnership,
+  loadBrandAndCheckOwnership,
   uploadLogo,
   validateBrandUpdate,
   handleValidationErrors,
@@ -429,7 +429,7 @@ router.put('/:id',
 // DELETE /brands/:id - Delete brand (requires ownership or platform admin)
 router.delete('/:id',
   authenticateToken,
-  loadBrandOwnership,
+  loadBrandAndCheckOwnership,
   validateBrandId,
   handleValidationErrors,
   async (req, res) => {
@@ -471,7 +471,7 @@ router.delete('/:id',
 // GET /brands/:id/stats - Get brand statistics (requires ownership or platform admin)
 router.get('/:id/stats',
   authenticateToken,
-  loadBrandOwnership,
+  loadBrandAndCheckOwnership,
   validateBrandId,
   handleValidationErrors,
   async (req, res) => {

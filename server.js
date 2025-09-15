@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const swaggerUi = require('swagger-ui-express');
+const swaggerJsdoc = require('swagger-jsdoc');
 require('dotenv').config();
 
 const app = express();
@@ -25,9 +27,41 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/hackmerid
 .then(() => console.log('MongoDB connected successfully'))
 .catch(err => console.error('MongoDB connection error:', err));
 
+// Swagger configuration
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'HackMeridian Backend API',
+      version: '1.0.0',
+      description: 'API documentation for HackMeridian platform with wallet integration',
+    },
+    servers: [
+      {
+        url: 'http://localhost:3000',
+        description: 'Development server',
+      },
+    ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+        },
+      },
+    },
+  },
+  apis: ['./routes/*.js'], // paths to files containing OpenAPI definitions
+};
+
+const specs = swaggerJsdoc(swaggerOptions);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/brands', require('./routes/brands'));
+app.use('/api/users', require('./routes/wallet'));
 
 // Health check endpoint
 app.get('/health', (req, res) => {

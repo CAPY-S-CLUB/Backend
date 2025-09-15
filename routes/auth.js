@@ -2,7 +2,91 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
+const walletService = require('../services/walletService');
 const router = express.Router();
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     User:
+ *       type: object
+ *       required:
+ *         - email
+ *         - password
+ *       properties:
+ *         id:
+ *           type: string
+ *           description: The auto-generated id of the user
+ *         email:
+ *           type: string
+ *           description: The user's email
+ *         first_name:
+ *           type: string
+ *           description: The user's first name
+ *         last_name:
+ *           type: string
+ *           description: The user's last name
+ *         user_type:
+ *           type: string
+ *           description: The user's type
+ *         wallet_address:
+ *           type: string
+ *           description: The user's wallet address
+ *         wallet_created_at:
+ *           type: string
+ *           format: date-time
+ *           description: When the wallet was created
+ *     LoginRequest:
+ *       type: object
+ *       required:
+ *         - email
+ *         - password
+ *       properties:
+ *         email:
+ *           type: string
+ *           description: User's email
+ *         password:
+ *           type: string
+ *           description: User's password
+ *     RegisterRequest:
+ *       type: object
+ *       required:
+ *         - email
+ *         - password
+ *       properties:
+ *         email:
+ *           type: string
+ *           description: User's email
+ *         password:
+ *           type: string
+ *           description: User's password
+ *         user_type:
+ *           type: string
+ *           description: User's type
+ *         first_name:
+ *           type: string
+ *           description: User's first name
+ *         last_name:
+ *           type: string
+ *           description: User's last name
+ *     AuthResponse:
+ *       type: object
+ *       properties:
+ *         success:
+ *           type: boolean
+ *         message:
+ *           type: string
+ *         data:
+ *           type: object
+ *           properties:
+ *             token:
+ *               type: string
+ *             user:
+ *               $ref: '#/components/schemas/User'
+ *             expires_in:
+ *               type: string
+ */
 
 // JWT utility functions
 const generateToken = (user) => {
@@ -55,6 +139,32 @@ const registerValidation = [
     .withMessage('Last name cannot exceed 50 characters')
 ];
 
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: User login
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/LoginRequest'
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: Validation failed
+ *       401:
+ *         description: Invalid credentials
+ *       500:
+ *         description: Server error
+ */
 // @route   POST /api/auth/login
 // @desc    Login user and return JWT
 // @access  Public
@@ -126,6 +236,32 @@ router.post('/login', loginValidation, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/auth/register:
+ *   post:
+ *     summary: User registration
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/RegisterRequest'
+ *     responses:
+ *       201:
+ *         description: User registered successfully with wallet created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: Validation failed
+ *       409:
+ *         description: User already exists
+ *       500:
+ *         description: Server error
+ */
 // @route   POST /api/auth/register
 // @desc    Register a new user
 // @access  Public (but can be restricted based on requirements)
@@ -163,6 +299,20 @@ router.post('/register', registerValidation, async (req, res) => {
 
     await newUser.save();
 
+    // Create wallet for the new user
+    try {
+      const walletResult = await walletService.createSmartWallet(newUser._id.toString());
+      if (walletResult.success) {
+        newUser.wallet_address = walletResult.wallet.address;
+        newUser.wallet_created_at = walletResult.wallet.createdAt;
+        await newUser.save();
+      }
+    } catch (walletError) {
+      console.error('Wallet creation failed for user:', newUser._id, walletError);
+      // Continue with user registration even if wallet creation fails
+      // Wallet can be created later via separate endpoint
+    }
+
     // Generate JWT token
     const token = generateToken(newUser);
 
@@ -195,6 +345,34 @@ router.post('/register', registerValidation, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/auth/verify:
+ *   post:
+ *     summary: Verify JWT token
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Token is valid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Invalid token or user not found
+ */
 // @route   POST /api/auth/verify
 // @desc    Verify JWT token
 // @access  Private
