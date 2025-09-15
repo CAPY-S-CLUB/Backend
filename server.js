@@ -4,7 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const swaggerUi = require('swagger-ui-express');
-const swaggerJsdoc = require('swagger-jsdoc');
+const { specs } = require('./config/swagger');
 require('dotenv').config();
 
 const app = express();
@@ -30,35 +30,23 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 console.log('⚠️  MongoDB connection disabled for demo purposes');
 
 // Swagger configuration
+console.log('🔧 Configuring Swagger documentation...');
 const swaggerOptions = {
-  definition: {
-    openapi: '3.0.0',
-    info: {
-      title: 'HackMeridian Backend API',
-      version: '1.0.0',
-      description: 'API documentation for HackMeridian platform with wallet integration',
-    },
-    servers: [
-      {
-        url: 'http://localhost:3000',
-        description: 'Development server',
-      },
-    ],
-    components: {
-      securitySchemes: {
-        bearerAuth: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
-        },
-      },
-    },
-  },
-  apis: ['./routes/*.js'], // paths to files containing OpenAPI definitions
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'HackMeridian API Documentation',
+  customfavIcon: '/favicon.ico',
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true,
+    docExpansion: 'none',
+    filter: true,
+    showExtensions: true,
+    showCommonExtensions: true
+  }
 };
 
-const specs = swaggerJsdoc(swaggerOptions);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, swaggerOptions));
+console.log('📚 Swagger documentation available at /api-docs');
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
@@ -66,6 +54,7 @@ app.use('/api/brands', require('./routes/brands'));
 app.use('/api/users', require('./routes/wallet'));
 app.use('/api', require('./routes/nftCollection'));
 app.use('/api', require('./routes/communityDashboard'));
+app.use('/api', require('./routes/products'));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
