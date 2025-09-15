@@ -17,6 +17,14 @@ const {
   generateCacheStatus
 } = require('./communityDashboardMocks');
 
+const {
+  invitationMocks,
+  membersMocks,
+  testScenarios,
+  generateRandomInvitation,
+  generateRandomMember
+} = require('./memberManagementMocks');
+
 /**
  * Configurações para diferentes ambientes de teste
  */
@@ -204,6 +212,138 @@ class CommunityDashboardMockManager {
   getNFTCollectionData(collectionId) {
     const mockIndex = this._getMockIndex(collectionId);
     return nftCollectionMocks[mockIndex];
+  }
+  
+  /**
+   * Obter dados de convite mock
+   * @param {string} invitationId - ID do convite
+   * @returns {Object} Dados do convite
+   */
+  getInvitationData(invitationId) {
+    const mockIndex = this._getMockIndex(invitationId);
+    return invitationMocks[mockIndex];
+  }
+
+  /**
+   * Obter lista de membros mock
+   * @param {string} communityId - ID da comunidade
+   * @param {Object} filters - Filtros para aplicar
+   * @returns {Array} Lista de membros
+   */
+  getMembersData(communityId, filters = {}) {
+    let members = [...membersMocks];
+    
+    // Aplicar filtros
+    if (filters.name) {
+      const nameFilter = filters.name.toLowerCase();
+      members = members.filter(member => 
+        member.first_name.toLowerCase().includes(nameFilter) ||
+        member.last_name.toLowerCase().includes(nameFilter)
+      );
+    }
+    
+    if (filters.email) {
+      const emailFilter = filters.email.toLowerCase();
+      members = members.filter(member => 
+        member.email.toLowerCase().includes(emailFilter)
+      );
+    }
+    
+    if (filters.join_date_from) {
+      const fromDate = new Date(filters.join_date_from);
+      members = members.filter(member => 
+        new Date(member.created_at) >= fromDate
+      );
+    }
+    
+    if (filters.join_date_to) {
+      const toDate = new Date(filters.join_date_to);
+      members = members.filter(member => 
+        new Date(member.created_at) <= toDate
+      );
+    }
+    
+    return members;
+  }
+
+  /**
+   * Gerar resposta de criação de convite
+   * @param {string} email - Email do convidado
+   * @param {number} expirationHours - Horas até expiração
+   * @returns {Object} Resposta da API
+   */
+  getInvitationCreationResponse(email, expirationHours = 24) {
+    const invitation = generateRandomInvitation(
+      '507f1f77bcf86cd799439011', // communityId
+      '507f1f77bcf86cd799439021'  // invitedBy
+    );
+    
+    invitation.email = email;
+    invitation.expiration_date = new Date(
+      Date.now() + expirationHours * 60 * 60 * 1000
+    ).toISOString();
+    
+    return {
+      success: true,
+      message: 'Invitation created successfully',
+      data: invitation
+    };
+  }
+
+  /**
+   * Gerar resposta de listagem de membros com paginação
+   * @param {string} communityId - ID da comunidade
+   * @param {number} page - Página atual
+   * @param {number} limit - Limite por página
+   * @param {Object} filters - Filtros aplicados
+   * @returns {Object} Resposta da API
+   */
+  getMembersListResponse(communityId, page = 1, limit = 20, filters = {}) {
+    const allMembers = this.getMembersData(communityId, filters);
+    const totalCount = allMembers.length;
+    const totalPages = Math.ceil(totalCount / limit);
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const members = allMembers.slice(startIndex, endIndex);
+    
+    return {
+      success: true,
+      message: 'Members retrieved successfully',
+      data: {
+        members,
+        pagination: {
+          current_page: page,
+          total_pages: totalPages,
+          total_count: totalCount,
+          limit,
+          has_next_page: page < totalPages,
+          has_prev_page: page > 1
+        },
+        filters_applied: filters
+      }
+    };
+  }
+
+  /**
+   * Gerar resposta de remoção de membro
+   * @param {string} memberId - ID do membro
+   * @returns {Object} Resposta da API
+   */
+  getMemberRemovalResponse(memberId) {
+    const member = membersMocks.find(m => m._id === memberId) || membersMocks[0];
+    
+    return {
+      success: true,
+      message: 'Member removed successfully',
+      data: {
+        removed_member: {
+          id: member._id,
+          name: `${member.first_name} ${member.last_name}`,
+          email: member.email,
+          removed_at: new Date().toISOString()
+        }
+      }
+    };
   }
   
   /**
