@@ -62,6 +62,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/brands', require('./routes/brands'));
 app.use('/api/users', require('./routes/wallet'));
+app.use('/api', require('./routes/nftCollection'));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
