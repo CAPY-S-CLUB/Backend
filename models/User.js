@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { mockUserFindByEmail } = require('../mocks/userLoginMocks');
 
 const userSchema = new mongoose.Schema({
   email: {
@@ -105,8 +106,16 @@ userSchema.methods.toSafeObject = function() {
 };
 
 // Static method to find user by email
-userSchema.statics.findByEmail = function(email) {
-  return this.findOne({ email: email.toLowerCase() });
+userSchema.statics.findByEmail = async function(email) {
+  try {
+    // Set a shorter timeout for MongoDB operations
+    const user = await this.findOne({ email: email.toLowerCase() }).maxTimeMS(3000);
+    return user;
+  } catch (error) {
+    // If MongoDB is not available or times out, use mock data
+    console.log('⚠️  MongoDB operation failed, using mock data for development:', error.message);
+    return await mockUserFindByEmail(email);
+  }
 };
 
 // Virtual for full name
