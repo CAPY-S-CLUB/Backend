@@ -48,6 +48,22 @@ const userSchema = new mongoose.Schema({
   updated_at: {
     type: Date,
     default: Date.now
+  },
+  wallet_address: {
+    type: String,
+    unique: true,
+    sparse: true, // Allows multiple null values
+    trim: true,
+    validate: {
+      validator: function(v) {
+        // Basic Ethereum address validation
+        return !v || /^0x[a-fA-F0-9]{40}$/.test(v);
+      },
+      message: 'Invalid wallet address format'
+    }
+  },
+  wallet_created_at: {
+    type: Date
   }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
