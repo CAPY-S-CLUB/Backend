@@ -18,7 +18,7 @@ describe('Community Dashboard API', () => {
     testUser = new User({
       username: 'testuser',
       email: 'test@example.com',
-      walletAddress: '0x1234567890123456789012345678901234567890',
+      walletAddress: 'GCKFBEIYTKP6JY4Q2F3LCKPC2OCDGTB5YYQADHV6HQMVQGQGQGQGQGQG',
       lastLogin: new Date()
     });
     await testUser.save();
@@ -54,7 +54,7 @@ describe('Community Dashboard API', () => {
       distributedCount: 300,
       communityId: testCommunity._id,
       createdBy: testUser._id,
-      contractAddress: '0x1234567890123456789012345678901234567890',
+      contractAddress: 'GDCKFBEIYTKP6JY4Q2F3LCKPC2OCDGTB5YYQADHV6HQMVQGQGQGQGQGQG',
       isActive: true
     });
     await testNFTCollection.save();

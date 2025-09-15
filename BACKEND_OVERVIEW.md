@@ -12,7 +12,7 @@ The **HackMeridian Backend** is a robust and scalable API developed in Node.js/E
 - **Database:** MongoDB (with Mongoose ODM)
 - **Cache:** Redis
 - **Authentication:** JWT (JSON Web Tokens)
-- **Blockchain:** Ethers.js, Hardhat
+- **Blockchain:** Stellar SDK
 - **Documentation:** Swagger/OpenAPI
 - **Testing:** Jest + Supertest
 - **File Upload:** AWS S3 + Multer
@@ -23,7 +23,7 @@ The **HackMeridian Backend** is a robust and scalable API developed in Node.js/E
 ```
 backend-hackmeridian/
 ├── config/          # Configurations (Redis, Swagger)
-├── contracts/       # Solidity Smart Contracts
+├── contracts/       # Stellar Asset Contracts
 ├── docs/           # API Documentation
 ├── middleware/     # Custom Middlewares
 ├── mocks/          # Test and simulation data
@@ -55,12 +55,12 @@ backend-hackmeridian/
 - Different access levels (member, moderator, admin)
 - View tracking and engagement
 
-### 4. **Blockchain and NFT Integration**
-- NFT collection creation and management (ERC-721 and ERC-1155)
-- NFT-based reward system
-- Web3 wallet integration
+### 4. **Blockchain and Asset Integration**
+- Stellar asset creation and management
+- Asset-based reward system
+- Stellar wallet integration
 - Blockchain transaction monitoring
-- Automated minting services
+- Automated asset issuance services
 
 ### 5. **Posts and Interactions System**
 - Post creation, editing, and deletion

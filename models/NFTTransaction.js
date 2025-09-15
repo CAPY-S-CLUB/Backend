@@ -5,28 +5,58 @@ const nftTransactionSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
-    index: true
+    index: true,
+    validate: {
+      validator: function(v) {
+        // Stellar transaction hash validation (64 characters, hex)
+        return /^[a-fA-F0-9]{64}$/.test(v);
+      },
+      message: 'Invalid Stellar transaction hash format'
+    }
   },
   fromAddress: {
     type: String,
-    required: true
+    required: true,
+    validate: {
+      validator: function(v) {
+        // Stellar address validation (56 characters, starts with G)
+        return /^G[A-Z2-7]{55}$/.test(v);
+      },
+      message: 'Invalid Stellar from address format'
+    }
   },
   toAddress: {
     type: String,
-    required: true
+    required: true,
+    validate: {
+      validator: function(v) {
+        // Stellar address validation (56 characters, starts with G)
+        return /^G[A-Z2-7]{55}$/.test(v);
+      },
+      message: 'Invalid Stellar to address format'
+    }
   },
   contractAddress: {
     type: String,
-    required: true
+    required: true,
+    validate: {
+      validator: function(v) {
+        // Stellar issuer address validation (56 characters, starts with G)
+        return /^G[A-Z2-7]{55}$/.test(v);
+      },
+      message: 'Invalid Stellar issuer address format'
+    }
   },
-  tokenId: {
+  assetCode: {
     type: String,
-    required: true
+    required: true,
+    maxlength: [12, 'Asset code cannot exceed 12 characters']
   },
   tokenType: {
     type: String,
-    enum: ['ERC721', 'ERC1155'],
-    required: true
+    enum: ['STELLAR_ASSET'],
+    required: true,
+    default: 'STELLAR_ASSET'
   },
   amount: {
     type: Number,
@@ -38,17 +68,17 @@ const nftTransactionSchema = new mongoose.Schema({
     default: 'pending',
     index: true
   },
-  gasUsed: {
-    type: Number
+  feeCharged: {
+    type: String,
+    description: 'Fee charged for the transaction in stroops'
   },
-  gasPrice: {
-    type: String
+  ledger: {
+    type: Number,
+    description: 'Stellar ledger number'
   },
-  blockNumber: {
-    type: Number
-  },
-  blockHash: {
-    type: String
+  ledgerCloseTime: {
+    type: Date,
+    description: 'Time when the ledger was closed'
   },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -88,9 +118,10 @@ const nftTransactionSchema = new mongoose.Schema({
 
 // Índices compostos para consultas eficientes
 nftTransactionSchema.index({ userId: 1, status: 1 });
-nftTransactionSchema.index({ contractAddress: 1, tokenId: 1 });
+nftTransactionSchema.index({ contractAddress: 1, assetCode: 1 });
 nftTransactionSchema.index({ eventType: 1, createdAt: -1 });
 nftTransactionSchema.index({ status: 1, createdAt: -1 });
+nftTransactionSchema.index({ ledger: 1 });
 
 // Método para atualizar status da transação
 nftTransactionSchema.methods.updateStatus = function(status, additionalData = {}) {

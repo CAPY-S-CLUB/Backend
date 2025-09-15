@@ -12,7 +12,7 @@ The **HackMeridian Backend** is a robust and scalable API developed in Node.js/E
 - **Database:** MongoDB (with Mongoose ODM)
 - **Cache:** Redis
 - **Authentication:** JWT (JSON Web Tokens)
-- **Blockchain:** Ethers.js, Hardhat
+- **Blockchain:** Stellar SDK
 - **Documentation:** Swagger/OpenAPI
 - **Testing:** Jest + Supertest
 - **File Upload:** AWS S3 + Multer
@@ -55,12 +55,12 @@ backend-hackmeridian/
 - Different access levels (member, moderator, admin)
 - View tracking and engagement
 
-### 4. **Blockchain and NFT Integration**
-- NFT collection creation and management (ERC-721 and ERC-1155)
-- NFT-based reward system
-- Web3 wallet integration
+### 4. **Blockchain and Asset Integration**
+- Stellar asset creation and management
+- Asset-based reward system
+- Stellar wallet integration
 - Blockchain transaction monitoring
-- Automated minting services
+- Automated asset issuance services
 
 ### 5. **Posts and Interactions System**
 - Post creation, editing, and deletion
@@ -103,7 +103,7 @@ backend-hackmeridian/
 - **Content:** Exclusive content with access control
 - **Post:** Public posts with interactions
 - **Product:** Digital and physical products
-- **NFTCollection:** NFT collections with metadata
+- **AssetCollection:** Stellar asset collections with metadata
 - **BadgeRule:** Rules for automatic badge achievement
 
 ## 🔄 Services and Integrations
@@ -111,14 +111,14 @@ backend-hackmeridian/
 ### Core Services
 - **walletService:** Web3 wallet integration
 - **blockchainService:** Smart contract interaction
-- **nftMintService:** Automated NFT creation
+- **assetMintService:** Automated Stellar asset creation
 - **uploadService:** S3 file management
 - **cacheService:** Redis optimization
 - **eventService:** Event and notification system
 
 ### External Integrations
 - **AWS S3:** File and media storage
-- **Moralis:** Blockchain and Web3 APIs
+- **Stellar Horizon:** Blockchain and Stellar APIs
 - **Redis:** Cache and sessions
 - **MongoDB:** Data persistence
 - **Nodemailer:** Email sending
@@ -134,7 +134,7 @@ backend-hackmeridian/
 ### Main Endpoints
 - `POST /api/auth/login` - User authentication
 - `GET /api/content/{id}` - Exclusive content access
-- `POST /api/nft/mint` - NFT creation
+- `POST /api/asset/mint` - Stellar asset creation
 - `GET /api/community/dashboard` - Community dashboard
 - `POST /api/posts` - Post creation
 
@@ -149,7 +149,7 @@ backend-hackmeridian/
 ### Test Coverage
 - Authentication and authorization system
 - Exclusive content access control
-- Blockchain and NFT integration
+- Blockchain and Stellar asset integration
 - Community management
 - File upload and processing
 

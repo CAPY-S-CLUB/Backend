@@ -25,7 +25,7 @@ const mockUsers = {
     last_login: new Date('2024-01-15T10:30:00Z'),
     created_at: new Date('2024-01-01T00:00:00Z'),
     updated_at: new Date('2024-01-15T10:30:00Z'),
-    wallet_address: '0x742d35Cc6634C0532925a3b8D4C0d886E682184C',
+    wallet_address: 'GCKFBEIYTKP6JY4Q2F3LCKPC2OCDGTB5YYQADHV6HQMVQGQGQGQGQGQG',
     wallet_created_at: new Date('2024-01-01T00:00:00Z'),
     
     // Métodos mock
@@ -60,7 +60,7 @@ const mockUsers = {
     last_login: new Date('2024-01-15T09:00:00Z'),
     created_at: new Date('2023-12-01T00:00:00Z'),
     updated_at: new Date('2024-01-15T09:00:00Z'),
-    wallet_address: '0x8ba1f109551bD432803012645Hac136c9.tab',
+    wallet_address: 'GDCKFBEIYTKP6JY4Q2F3LCKPC2OCDGTB5YYQADHV6HQMVQGQGQGQGQGQG',
     wallet_created_at: new Date('2023-12-01T00:00:00Z'),
     
     comparePassword: async function(candidatePassword) {
@@ -94,7 +94,7 @@ const mockUsers = {
     last_login: new Date('2024-01-15T10:30:00Z'),
     created_at: new Date('2024-01-01T00:00:00Z'),
     updated_at: new Date('2024-01-15T10:30:00Z'),
-    wallet_address: '0x742d35Cc6634C0532925a3b8D4C0d886E682184D',
+    wallet_address: 'GECKFBEIYTKP6JY4Q2F3LCKPC2OCDGTB5YYQADHV6HQMVQGQGQGQGQGQG',
     wallet_created_at: new Date('2024-01-01T00:00:00Z'),
     
     // Métodos mock
@@ -217,7 +217,7 @@ const expectedResponses = {
         first_name: 'João',
         last_name: 'Silva',
         is_active: true,
-        wallet_address: '0x742d35Cc6634C0532925a3b8D4C0d886E682184C'
+        wallet_address: 'GCKFBEIYTKP6JY4Q2F3LCKPC2OCDGTB5YYQADHV6HQMVQGQGQGQGQGQG'
       },
       expires_in: '7d'
     }

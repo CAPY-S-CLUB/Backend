@@ -13,7 +13,9 @@ const userSchema = new mongoose.Schema({
   },
   password_hash: {
     type: String,
-    required: [true, 'Password is required'],
+    required: function() {
+      return this.auth_method === 'traditional';
+    },
     minlength: [6, 'Password must be at least 6 characters']
   },
   user_type: {
@@ -57,14 +59,19 @@ const userSchema = new mongoose.Schema({
     trim: true,
     validate: {
       validator: function(v) {
-        // Basic Ethereum address validation
-        return !v || /^0x[a-fA-F0-9]{40}$/.test(v);
+        // Stellar address validation (starts with G and is 56 characters)
+        return !v || /^G[A-Z2-7]{55}$/.test(v);
       },
-      message: 'Invalid wallet address format'
+      message: 'Wallet address must be a valid Stellar address (56 characters starting with G)'
     }
   },
   wallet_created_at: {
     type: Date
+  },
+  auth_method: {
+    type: String,
+    enum: ['traditional', 'wallet'],
+    default: 'traditional'
   }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }

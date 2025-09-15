@@ -72,7 +72,7 @@ const productSchema = new mongoose.Schema({
   currency: {
     type: String,
     default: 'USD',
-    enum: ['USD', 'EUR', 'BRL', 'ETH', 'BTC']
+    enum: ['USD', 'EUR', 'BRL', 'XLM']
   },
   tags: {
     type: [String],

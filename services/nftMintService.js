@@ -1,29 +1,12 @@
-const { ethers } = require('ethers');
+const { Server, Keypair, Asset, Operation, TransactionBuilder, Networks, BASE_FEE } = require('@stellar/stellar-sdk');
 const walletService = require('./walletService');
 const NFTTransaction = require('../models/NFTTransaction');
 const EventLog = require('../models/EventLog');
 
-// ABIs para contratos ERC721 e ERC1155
-const ERC721_ABI = [
-  'function mint(address to, uint256 tokenId) external',
-  'function safeMint(address to, uint256 tokenId) external',
-  'function mintWithMetadata(address to, uint256 tokenId, string memory tokenURI) external',
-  'function ownerOf(uint256 tokenId) external view returns (address)',
-  'function balanceOf(address owner) external view returns (uint256)',
-  'function transferFrom(address from, address to, uint256 tokenId) external'
-];
-
-const ERC1155_ABI = [
-  'function mint(address to, uint256 id, uint256 amount, bytes memory data) external',
-  'function mintBatch(address to, uint256[] memory ids, uint256[] memory amounts, bytes memory data) external',
-  'function balanceOf(address account, uint256 id) external view returns (uint256)',
-  'function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes memory data) external'
-];
-
 class NFTMintService {
   constructor() {
-    this.provider = null;
-    this.signer = null;
+    this.server = null;
+    this.issuerKeypair = null;
     this.isInitialized = false;
     this.rateLimitMap = new Map(); // Para rate limiting
     this.maxRetries = 3;
@@ -31,29 +14,31 @@ class NFTMintService {
   }
 
   /**
-   * Inicializa o serviço com provider e signer
+   * Inicializa o serviço com Stellar server e issuer keypair
    */
   async initialize() {
     if (this.isInitialized) return;
 
     try {
-      // Configurar provider baseado na rede
-      const network = process.env.BLOCKCHAIN_NETWORK || 'sepolia';
-      const rpcUrl = process.env.RPC_URL || `https://${network}.infura.io/v3/${process.env.INFURA_PROJECT_ID}`;
+      // Configurar Stellar server baseado na rede
+      const network = process.env.STELLAR_NETWORK || 'testnet';
+      const horizonUrl = network === 'mainnet' 
+        ? 'https://horizon.stellar.org'
+        : 'https://horizon-testnet.stellar.org';
       
-      this.provider = new ethers.JsonRpcProvider(rpcUrl);
+      this.server = new Server(horizonUrl);
       
-      // Configurar signer com chave privada do sistema
-      const privateKey = process.env.SYSTEM_WALLET_PRIVATE_KEY;
-      if (!privateKey) {
-        throw new Error('SYSTEM_WALLET_PRIVATE_KEY not configured');
+      // Configurar issuer keypair com chave privada do sistema
+      const issuerSecret = process.env.STELLAR_ISSUER_SECRET_KEY;
+      if (!issuerSecret) {
+        throw new Error('STELLAR_ISSUER_SECRET_KEY not configured');
       }
       
-      this.signer = new ethers.Wallet(privateKey, this.provider);
+      this.issuerKeypair = Keypair.fromSecret(issuerSecret);
       this.isInitialized = true;
       
-      console.log(`NFT Mint Service initialized on ${network} network`);
-      console.log(`System wallet address: ${this.signer.address}`);
+      console.log(`NFT Mint Service initialized on Stellar ${network} network`);
+      console.log(`Issuer account: ${this.issuerKeypair.publicKey()}`);
     } catch (error) {
       console.error('Failed to initialize NFT Mint Service:', error);
       throw new Error('NFT Mint Service initialization failed');
@@ -61,39 +46,35 @@ class NFTMintService {
   }
 
   /**
-   * Função principal para mint e transferência de NFT
+   * Função principal para criar e transferir NFT no Stellar
    * @param {string} walletAddress - Endereço da carteira do destinatário
-   * @param {string} tokenId - ID do token (para ERC721) ou ID do tipo (para ERC1155)
-   * @param {string} contractAddress - Endereço do contrato NFT
-   * @param {string} tokenType - Tipo do token ('ERC721' ou 'ERC1155')
+   * @param {string} assetCode - Código do asset NFT
+   * @param {string} assetIssuer - Endereço do emissor do asset (opcional)
+   * @param {string} tokenType - Tipo do token ('STELLAR_NFT')
    * @param {Object} metadata - Metadados do NFT
    * @param {string} userId - ID do usuário
    * @param {string} eventType - Tipo do evento que gerou o mint
    * @param {Object} eventData - Dados do evento
-   * @param {number} amount - Quantidade (apenas para ERC1155)
+   * @param {string} amount - Quantidade (geralmente '1' para NFTs)
    * @returns {Promise<Object>} Resultado da operação
    */
   async mintAndTransferNFT({
     walletAddress,
-    tokenId,
-    contractAddress,
-    tokenType = 'ERC721',
+    assetCode,
+    assetIssuer,
+    tokenType = 'STELLAR_NFT',
     metadata = {},
     userId,
     eventType,
     eventData = {},
-    amount = 1
+    amount = '1'
   }) {
     try {
       await this.initialize();
       
       // Validações iniciais
-      if (!walletService.isValidAddress(walletAddress)) {
-        throw new Error('Invalid wallet address');
-      }
-      
-      if (!walletService.isValidAddress(contractAddress)) {
-        throw new Error('Invalid contract address');
+      if (!walletService.isValidStellarAddress(walletAddress)) {
+        throw new Error('Invalid Stellar wallet address');
       }
       
       // Verificar rate limiting
@@ -102,20 +83,23 @@ class NFTMintService {
       }
       
       // Verificar se o usuário já possui este NFT (anti-fraude)
-      const existingNFT = await this.checkExistingNFT(userId, contractAddress, tokenId, tokenType);
+      const existingNFT = await this.checkExistingNFT(userId, assetCode, assetIssuer, tokenType);
       if (existingNFT) {
         throw new Error('User already owns this NFT');
       }
       
+      // Usar o issuer configurado se não fornecido
+      const finalIssuer = assetIssuer || this.issuerKeypair.publicKey();
+      
       // Criar registro de transação
       const nftTransaction = new NFTTransaction({
         transactionHash: '', // Será preenchido após a transação
-        fromAddress: this.signer.address,
+        fromAddress: this.issuerKeypair.publicKey(),
         toAddress: walletAddress,
-        contractAddress,
-        tokenId: tokenId.toString(),
+        contractAddress: finalIssuer, // No Stellar, usamos o issuer como "contrato"
+        tokenId: assetCode,
         tokenType,
-        amount,
+        amount: parseFloat(amount),
         status: 'pending',
         userId,
         eventType,
@@ -125,15 +109,14 @@ class NFTMintService {
       
       await nftTransaction.save();
       
-      // Executar mint baseado no tipo de token
-      let transactionHash;
-      if (tokenType === 'ERC721') {
-        transactionHash = await this.mintERC721(contractAddress, walletAddress, tokenId, metadata);
-      } else if (tokenType === 'ERC1155') {
-        transactionHash = await this.mintERC1155(contractAddress, walletAddress, tokenId, amount, metadata);
-      } else {
-        throw new Error('Unsupported token type');
-      }
+      // Executar mint e transferência no Stellar
+      const transactionHash = await this.mintStellarNFT(
+        walletAddress, 
+        assetCode, 
+        finalIssuer, 
+        amount, 
+        metadata
+      );
       
       // Atualizar transação com hash
       nftTransaction.transactionHash = transactionHash;
@@ -149,7 +132,9 @@ class NFTMintService {
         success: true,
         transactionHash,
         nftTransactionId: nftTransaction._id,
-        message: 'NFT mint transaction submitted successfully'
+        assetCode,
+        assetIssuer: finalIssuer,
+        message: 'Stellar NFT mint transaction submitted successfully'
       };
       
     } catch (error) {
@@ -157,98 +142,133 @@ class NFTMintService {
       
       // Atualizar transação como falhou se existir
       if (nftTransaction && nftTransaction._id) {
-        await nftTransaction.updateStatus('failed', { errorMessage: error.message });
+        await nftTransaction.updateStatus('failed', {
+          errorMessage: error.message
+        });
       }
       
       throw error;
     }
   }
-  
+
   /**
-   * Mint ERC721 NFT
+   * Cria e transfere um NFT no Stellar
    */
-  async mintERC721(contractAddress, toAddress, tokenId, metadata) {
+  async mintStellarNFT(destinationAddress, assetCode, assetIssuer, amount, metadata) {
     try {
-      const contract = new ethers.Contract(contractAddress, ERC721_ABI, this.signer);
+      // Carregar conta do destinatário
+      const destinationAccount = await this.server.loadAccount(destinationAddress);
       
-      // Verificar se o token já existe
-      try {
-        const owner = await contract.ownerOf(tokenId);
-        if (owner !== ethers.ZeroAddress) {
-          throw new Error(`Token ${tokenId} already exists`);
-        }
-      } catch (error) {
-        // Token não existe, pode prosseguir
+      // Criar o asset NFT
+      const nftAsset = new Asset(assetCode, assetIssuer);
+      
+      // Verificar se a conta de destino já tem trustline para o asset
+      const hasTrustline = destinationAccount.balances.some(
+        balance => balance.asset_code === assetCode && balance.asset_issuer === assetIssuer
+      );
+      
+      let transaction;
+      
+      if (!hasTrustline) {
+        // Criar trustline e transferir em uma única transação
+        transaction = new TransactionBuilder(destinationAccount, {
+          fee: BASE_FEE,
+          networkPassphrase: process.env.STELLAR_NETWORK === 'mainnet' 
+            ? Networks.PUBLIC 
+            : Networks.TESTNET
+        })
+        .addOperation(Operation.changeTrust({
+          asset: nftAsset,
+          limit: amount // Limitar a quantidade que pode ser recebida
+        }))
+        .setTimeout(300)
+        .build();
+        
+        // Assinar com a chave do destinatário (isso requer que tenhamos acesso)
+        // Em um cenário real, isso seria feito pelo frontend/wallet do usuário
+        transaction.sign(Keypair.fromPublicKey(destinationAddress));
+        
+        // Submeter trustline transaction
+        await this.server.submitTransaction(transaction);
+        
+        // Recarregar conta após trustline
+        const updatedDestinationAccount = await this.server.loadAccount(destinationAddress);
+        
+        // Agora criar transação de payment do issuer
+        const issuerAccount = await this.server.loadAccount(assetIssuer);
+        
+        const paymentTransaction = new TransactionBuilder(issuerAccount, {
+          fee: BASE_FEE,
+          networkPassphrase: process.env.STELLAR_NETWORK === 'mainnet' 
+            ? Networks.PUBLIC 
+            : Networks.TESTNET
+        })
+        .addOperation(Operation.payment({
+          destination: destinationAddress,
+          asset: nftAsset,
+          amount: amount
+        }))
+        .setTimeout(300)
+        .build();
+        
+        paymentTransaction.sign(this.issuerKeypair);
+        
+        const result = await this.server.submitTransaction(paymentTransaction);
+        return result.hash;
+        
+      } else {
+        // Apenas transferir se trustline já existe
+        const issuerAccount = await this.server.loadAccount(assetIssuer);
+        
+        transaction = new TransactionBuilder(issuerAccount, {
+          fee: BASE_FEE,
+          networkPassphrase: process.env.STELLAR_NETWORK === 'mainnet' 
+            ? Networks.PUBLIC 
+            : Networks.TESTNET
+        })
+        .addOperation(Operation.payment({
+          destination: destinationAddress,
+          asset: nftAsset,
+          amount: amount
+        }))
+        .setTimeout(300)
+        .build();
+        
+        transaction.sign(this.issuerKeypair);
+        
+        const result = await this.server.submitTransaction(transaction);
+        return result.hash;
       }
       
-      // Estimar gas
-      const gasEstimate = await contract.mint.estimateGas(toAddress, tokenId);
-      const gasLimit = gasEstimate * BigInt(120) / BigInt(100); // 20% buffer
-      
-      // Executar mint
-      const tx = await contract.mint(toAddress, tokenId, {
-        gasLimit,
-        gasPrice: await this.provider.getFeeData().then(data => data.gasPrice)
-      });
-      
-      console.log(`ERC721 mint transaction submitted: ${tx.hash}`);
-      return tx.hash;
-      
     } catch (error) {
-      console.error('Error minting ERC721:', error);
-      throw new Error(`Failed to mint ERC721: ${error.message}`);
+      console.error('Error minting Stellar NFT:', error);
+      throw new Error(`Failed to mint Stellar NFT: ${error.message}`);
     }
   }
-  
+
   /**
-   * Mint ERC1155 NFT
-   */
-  async mintERC1155(contractAddress, toAddress, tokenId, amount, metadata) {
-    try {
-      const contract = new ethers.Contract(contractAddress, ERC1155_ABI, this.signer);
-      
-      // Estimar gas
-      const gasEstimate = await contract.mint.estimateGas(toAddress, tokenId, amount, '0x');
-      const gasLimit = gasEstimate * BigInt(120) / BigInt(100); // 20% buffer
-      
-      // Executar mint
-      const tx = await contract.mint(toAddress, tokenId, amount, '0x', {
-        gasLimit,
-        gasPrice: await this.provider.getFeeData().then(data => data.gasPrice)
-      });
-      
-      console.log(`ERC1155 mint transaction submitted: ${tx.hash}`);
-      return tx.hash;
-      
-    } catch (error) {
-      console.error('Error minting ERC1155:', error);
-      throw new Error(`Failed to mint ERC1155: ${error.message}`);
-    }
-  }
-  
-  /**
-   * Monitorar transação em background
+   * Monitora uma transação Stellar
    */
   async monitorTransaction(nftTransactionId, transactionHash) {
     try {
-      const receipt = await this.provider.waitForTransaction(transactionHash, 1, 300000); // 5 minutos timeout
+      // Aguardar confirmação da transação
+      const transaction = await this.server.transactions().transaction(transactionHash).call();
       
       const nftTransaction = await NFTTransaction.findById(nftTransactionId);
       if (!nftTransaction) return;
       
-      if (receipt.status === 1) {
+      if (transaction.successful) {
         await nftTransaction.updateStatus('confirmed', {
-          gasUsed: receipt.gasUsed.toString(),
-          gasPrice: receipt.gasPrice?.toString(),
-          blockNumber: receipt.blockNumber,
-          blockHash: receipt.blockHash
+          ledger: transaction.ledger,
+          createdAt: transaction.created_at,
+          operationCount: transaction.operation_count
         });
-        console.log(`Transaction ${transactionHash} confirmed`);
+        console.log(`Stellar transaction ${transactionHash} confirmed`);
       } else {
         await nftTransaction.updateStatus('failed', {
-          errorMessage: 'Transaction reverted'
+          errorMessage: 'Transaction failed'
         });
-        console.log(`Transaction ${transactionHash} failed`);
+        console.log(`Stellar transaction ${transactionHash} failed`);
       }
     } catch (error) {
       console.error(`Error monitoring transaction ${transactionHash}:`, error);
@@ -261,60 +281,51 @@ class NFTMintService {
       }
     }
   }
-  
+
   /**
-   * Verificar rate limiting
+   * Verifica rate limiting
    */
   isRateLimited(userId) {
     const now = Date.now();
-    const userLimits = this.rateLimitMap.get(userId);
+    const userLimit = this.rateLimitMap.get(userId);
     
-    if (!userLimits) return false;
+    if (!userLimit) return false;
     
-    // Limpar entradas antigas
-    const oneHour = 60 * 60 * 1000;
-    const validEntries = userLimits.filter(timestamp => now - timestamp < oneHour);
-    
-    if (validEntries.length === 0) {
-      this.rateLimitMap.delete(userId);
-      return false;
-    }
-    
-    this.rateLimitMap.set(userId, validEntries);
-    
-    // Máximo 5 NFTs por hora por usuário
-    return validEntries.length >= 5;
+    // Permitir 1 mint por minuto por usuário
+    const timeLimit = 60 * 1000; // 1 minuto
+    return (now - userLimit.lastMint) < timeLimit;
   }
-  
+
   /**
-   * Aplicar rate limiting
+   * Aplica rate limiting
    */
   applyRateLimit(userId) {
-    const now = Date.now();
-    const userLimits = this.rateLimitMap.get(userId) || [];
-    userLimits.push(now);
-    this.rateLimitMap.set(userId, userLimits);
+    this.rateLimitMap.set(userId, {
+      lastMint: Date.now(),
+      count: (this.rateLimitMap.get(userId)?.count || 0) + 1
+    });
   }
-  
+
   /**
-   * Verificar se usuário já possui NFT (anti-fraude)
+   * Verifica se o usuário já possui um NFT específico
    */
-  async checkExistingNFT(userId, contractAddress, tokenId, tokenType) {
+  async checkExistingNFT(userId, assetCode, assetIssuer, tokenType) {
     return await NFTTransaction.findOne({
       userId,
-      contractAddress,
-      tokenId: tokenId.toString(),
+      contractAddress: assetIssuer,
+      tokenId: assetCode,
       tokenType,
       status: { $in: ['confirmed', 'pending'] }
     });
   }
-  
+
   /**
    * Retry de transação falhada
    */
   async retryFailedTransaction(nftTransactionId) {
     try {
       const nftTransaction = await NFTTransaction.findById(nftTransactionId);
+      
       if (!nftTransaction || nftTransaction.status !== 'failed') {
         throw new Error('Transaction not found or not in failed state');
       }
@@ -323,23 +334,26 @@ class NFTMintService {
         throw new Error('Maximum retry attempts exceeded');
       }
       
+      // Incrementar contador de retry
       await nftTransaction.incrementRetry();
       
-      // Retry mint
-      return await this.mintAndTransferNFT({
+      // Tentar novamente
+      const result = await this.mintAndTransferNFT({
         walletAddress: nftTransaction.toAddress,
-        tokenId: nftTransaction.tokenId,
-        contractAddress: nftTransaction.contractAddress,
+        assetCode: nftTransaction.tokenId,
+        assetIssuer: nftTransaction.contractAddress,
         tokenType: nftTransaction.tokenType,
         metadata: nftTransaction.metadata,
         userId: nftTransaction.userId,
         eventType: nftTransaction.eventType,
         eventData: nftTransaction.eventData,
-        amount: nftTransaction.amount
+        amount: nftTransaction.amount.toString()
       });
       
+      return result;
+      
     } catch (error) {
-      console.error('Error retrying transaction:', error);
+      console.error('Error retrying failed transaction:', error);
       throw error;
     }
   }

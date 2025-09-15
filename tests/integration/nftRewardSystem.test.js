@@ -44,12 +44,14 @@ describe('NFT Reward System - Integration Tests', function() {
     await antiFraudService.initialize({ redis: { db: 1 } });
     await transactionMonitorService.initialize();
     
-    // Mock do WalletService
+    // Mock do WalletService para Stellar
     mockWalletService = {
       mintNFT: sinon.stub(),
       transferNFT: sinon.stub(),
       getWalletBalance: sinon.stub(),
-      isValidAddress: sinon.stub().returns(true)
+      isValidStellarAddress: sinon.stub().returns(true),
+      createStellarWallet: sinon.stub(),
+      getAccountInfo: sinon.stub()
     };
     
     // Substituir WalletService no nftMintService
@@ -84,11 +86,11 @@ describe('NFT Reward System - Integration Tests', function() {
       redisClient.flushDb()
     ]);
     
-    // Criar usuário de teste
+    // Criar usuário de teste com endereço Stellar
     testUser = await User.create({
       email: 'test.user@test.com',
       username: 'testuser',
-      walletAddress: '0x1234567890123456789012345678901234567890',
+      walletAddress: 'GCKFBEIYTKP6RCZX6LROC7CWJAHUV2XRFQD4YT6WVYQTFLQW7ASDQHPZ',
       isActive: true
     });
     
@@ -109,7 +111,7 @@ describe('NFT Reward System - Integration Tests', function() {
           { trait_type: 'Type', value: 'Attendance' }
         ]
       },
-      contractAddress: '0xTestContract123456789012345678901234567890',
+      contractAddress: 'GCKFBEIYTKP6RCZX6LROC7CWJAHUV2XRFQD4YT6WVYQTFLQW7ASDQHPZ',
       isActive: true,
       oneTimeOnly: true
     });
@@ -123,12 +125,12 @@ describe('NFT Reward System - Integration Tests', function() {
   describe('End-to-End NFT Reward Flow', function() {
     
     it('should complete full reward flow: event -> rule matching -> NFT mint', async function() {
-      // Configurar mock para mint bem-sucedido
+      // Configurar mock para mint bem-sucedido no Stellar
       mockWalletService.mintNFT.resolves({
         success: true,
-        transactionHash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
-        tokenId: '1',
-        gasUsed: '150000'
+        transactionHash: 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+        assetCode: 'TESTEVENT001',
+        feeCharged: '100'
       });
       
       // 1. Publicar evento de participação
@@ -161,7 +163,7 @@ describe('NFT Reward System - Integration Tests', function() {
       
       expect(nftTransaction).to.not.be.null;
       expect(nftTransaction.status).to.equal('pending');
-      expect(nftTransaction.transactionHash).to.equal('0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890');
+      expect(nftTransaction.transactionHash).to.equal('abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890');
       
       // 4. Verificar que o mint foi chamado
       expect(mockWalletService.mintNFT.calledOnce).to.be.true;
@@ -185,10 +187,10 @@ describe('NFT Reward System - Integration Tests', function() {
       await NFTTransaction.create({
         userId: testUser._id,
         badgeRuleId: testBadgeRule._id,
-        transactionHash: '0xexisting123',
+        transactionHash: 'existing123456789012345678901234567890123456789012345678901234',
         status: 'confirmed',
         contractAddress: testBadgeRule.contractAddress,
-        tokenId: '1'
+        assetCode: 'TESTEVENT001'
       });
       
       // Tentar processar evento novamente
@@ -215,7 +217,7 @@ describe('NFT Reward System - Integration Tests', function() {
     
     it('should handle mint failures gracefully', async function() {
       // Configurar mock para falha no mint
-      mockWalletService.mintNFT.rejects(new Error('Insufficient gas'));
+      mockWalletService.mintNFT.rejects(new Error('Insufficient XLM balance'));
       
       const eventData = {
         eventType: 'user_attended_event',
@@ -231,7 +233,7 @@ describe('NFT Reward System - Integration Tests', function() {
       // Verificar que o erro foi tratado
       expect(ruleResult.success).to.be.false;
       expect(ruleResult.errors).to.have.length(1);
-      expect(ruleResult.errors[0]).to.include('Insufficient gas');
+      expect(ruleResult.errors[0]).to.include('Insufficient XLM balance');
       
       // Verificar que a transação foi marcada como falhada
       const nftTransaction = await NFTTransaction.findOne({
@@ -241,7 +243,7 @@ describe('NFT Reward System - Integration Tests', function() {
       
       expect(nftTransaction).to.not.be.null;
       expect(nftTransaction.status).to.equal('failed');
-      expect(nftTransaction.errorMessage).to.include('Insufficient gas');
+      expect(nftTransaction.errorMessage).to.include('Insufficient XLM balance');
     });
   });
   
@@ -352,12 +354,12 @@ describe('NFT Reward System - Integration Tests', function() {
         getTransactionReceipt: sinon.stub().resolves({
           status: 1,
           blockNumber: 12345,
-          gasUsed: { toString: () => '150000' }
+          feeCharged: { toString: () => '100' }
         })
       };
       
       // Substituir provider no serviço
-      transactionMonitorService.providers.set('ethereum', mockProvider);
+      transactionMonitorService.providers.set('stellar', mockProvider);
       
       // Verificar status da transação
       await transactionMonitorService.checkTransactionStatus(transaction);
@@ -475,7 +477,7 @@ describe('NFT Reward System - Integration Tests', function() {
       // Configurar mock para múltiplos mints
       mockWalletService.mintNFT.resolves({
         success: true,
-        transactionHash: '0xconcurrent123456789012345678901234567890123456789012345678',
+        transactionHash: 'concurrent123456789012345678901234567890123456789012345678',
         tokenId: '1'
       });
       
@@ -490,7 +492,7 @@ describe('NFT Reward System - Integration Tests', function() {
             name: `Concurrent Test ${i}`,
             description: 'Concurrent test badge'
           },
-          contractAddress: `0xConcurrent${i.toString().padStart(38, '0')}`,
+          contractAddress: `GCONCURRENT${i.toString().padStart(43, '0')}`,
           isActive: true
         });
         badgeRules.push(rule);

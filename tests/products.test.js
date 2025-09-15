@@ -76,7 +76,7 @@ describe('Products API', () => {
       username: 'testuser',
       email: 'test@example.com',
       password: 'hashedpassword',
-      wallet_address: '0x1234567890123456789012345678901234567890'
+      wallet_address: 'GCKFBEIYTKP6RCZX6LROC7CWJAHUV2XRFQD4YT6WVYQTFLQW7ASDQHPZ'
     });
     await testUser.save();
 
@@ -85,7 +85,7 @@ describe('Products API', () => {
       username: 'otheruser',
       email: 'other@example.com',
       password: 'hashedpassword',
-      wallet_address: '0x0987654321098765432109876543210987654321'
+      wallet_address: 'GDXLKEY5TR4IDEVRIES6HVFG7V5QWYZ3T6LT3ZMZM2HIQQHHMXIODILO'
     });
     await otherUser.save();
 

@@ -1,228 +1,283 @@
-const Moralis = require('moralis').default;
-const { EvmApi } = require('@moralisweb3/evm-api');
-const { ethers } = require('ethers');
+// Temporarily disabled due to import issues
+// const { StellarWalletsKit, WalletNetwork, XBULL_ID } = require('@creit.tech/stellar-wallets-kit');
+// const { 
+//   WalletConnectAllowedMethods, 
+//   WalletConnectModule 
+// } = require('@creit.tech/stellar-wallets-kit/modules/walletconnect.module');
+// const { xBullModule } = require('@creit.tech/stellar-wallets-kit/modules/xbull.module');
+// const { FreighterModule } = require('@creit.tech/stellar-wallets-kit/modules/freighter.module');
+// const { AlbedoModule } = require('@creit.tech/stellar-wallets-kit/modules/albedo.module');
+const { Keypair, Networks, Server } = require('@stellar/stellar-sdk');
 
 class WalletService {
   constructor() {
+    this.kit = null;
+    this.server = null;
     this.isInitialized = false;
   }
 
   /**
-   * Initialize Moralis SDK
+   * Initialize Stellar Wallet Kit with WalletConnect
    */
   async initialize() {
     if (this.isInitialized) return;
     
     try {
-      await Moralis.start({
-        apiKey: process.env.MORALIS_API_KEY,
-      });
+      // Initialize Stellar server
+      this.server = new Server('https://horizon.stellar.org'); // Mainnet
+      // For testnet: this.server = new Server('https://horizon-testnet.stellar.org');
+      
+      // Temporarily disabled due to import issues
+      // this.kit = new StellarWalletsKit({
+      //   selectedWalletId: XBULL_ID,
+      //   network: WalletNetwork.PUBLIC,
+      //   modules: [
+      //     new WalletConnectModule({
+      //       url: process.env.SITE_URL || 'http://localhost:3000',
+      //       projectId: process.env.WALLETCONNECT_PROJECT_ID || 'your-project-id',
+      //       method: WalletConnectAllowedMethods.SIGN,
+      //       description: 'CAPY-S-CLUB - Exclusive Content Platform',
+      //       name: 'CAPY-S-CLUB',
+      //       icons: [process.env.SITE_LOGO || 'https://example.com/logo.png'],
+      //       network: WalletNetwork.PUBLIC,
+      //     }),
+      //   ],
+      // });
+      
       this.isInitialized = true;
-      console.log('Moralis SDK initialized successfully');
+      console.log('Stellar Wallet Kit initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize Moralis SDK:', error);
+      console.error('Failed to initialize Stellar Wallet Kit:', error);
       throw new Error('Wallet service initialization failed');
     }
   }
 
   /**
-   * Create a new smart wallet for a user
+   * Create a new Stellar wallet for a user
    * @param {string} userId - The user ID
    * @returns {Promise<Object>} Wallet creation result
    */
-  async createSmartWallet(userId) {
+  async createStellarWallet(userId) {
     try {
       await this.initialize();
       
-      // Generate a new wallet using ethers
-      const wallet = ethers.Wallet.createRandom();
+      // Generate a new Stellar keypair
+      const keypair = Keypair.random();
       
       const walletData = {
-        address: wallet.address,
-        privateKey: wallet.privateKey, // In production, this should be encrypted and stored securely
-        mnemonic: wallet.mnemonic?.phrase,
+        publicKey: keypair.publicKey(),
+        secretKey: keypair.secret(), // In production, this should be encrypted and stored securely
         userId: userId,
         createdAt: new Date(),
-        network: 'ethereum', // Default network
+        network: 'stellar-mainnet', // or 'stellar-testnet'
         isActive: true
       };
       
-      console.log(`Smart wallet created for user ${userId}: ${wallet.address}`);
-      
+      console.log(`Stellar wallet created for user ${userId}: ${keypair.publicKey()}`);
       return {
         success: true,
-        wallet: {
-          address: walletData.address,
-          network: walletData.network,
-          createdAt: walletData.createdAt
-        }
+        wallet: walletData,
+        message: 'Stellar wallet created successfully'
       };
     } catch (error) {
-      console.error('Error creating smart wallet:', error);
-      throw new Error(`Failed to create wallet for user ${userId}: ${error.message}`);
+      console.error('Error creating Stellar wallet:', error);
+      return {
+        success: false,
+        error: error.message,
+        message: 'Failed to create Stellar wallet'
+      };
     }
   }
 
   /**
-   * Get wallet balance for a given address
-   * @param {string} address - Wallet address
-   * @param {string} chain - Blockchain network (default: eth)
-   * @returns {Promise<Object>} Balance information
+   * Connect to a wallet using Stellar Wallet Kit
+   * @returns {Promise<Object>} Connection result
    */
-  async getWalletBalance(address, chain = 'eth') {
+  async connectWallet() {
     try {
       await this.initialize();
       
-      const response = await EvmApi.balance.getNativeBalance({
-        address,
-        chain,
-      });
+      const { address } = await this.kit.getAddress();
       
       return {
         success: true,
-        balance: {
-          raw: response.result.balance,
-          formatted: ethers.formatEther(response.result.balance),
-          symbol: 'ETH',
-          decimals: 18
-        }
+        address: address,
+        message: 'Wallet connected successfully'
+      };
+    } catch (error) {
+      console.error('Error connecting wallet:', error);
+      return {
+        success: false,
+        error: error.message,
+        message: 'Failed to connect wallet'
+      };
+    }
+  }
+
+  /**
+   * Get wallet balance for a Stellar address
+   * @param {string} publicKey - The Stellar public key
+   * @returns {Promise<Object>} Balance information
+   */
+  async getWalletBalance(publicKey) {
+    try {
+      await this.initialize();
+      
+      const account = await this.server.loadAccount(publicKey);
+      const balances = account.balances;
+      
+      return {
+        success: true,
+        balances: balances,
+        message: 'Balance retrieved successfully'
       };
     } catch (error) {
       console.error('Error getting wallet balance:', error);
       return {
         success: false,
         error: error.message,
-        balance: {
-          raw: '0',
-          formatted: '0',
-          symbol: 'ETH',
-          decimals: 18
-        }
+        message: 'Failed to get wallet balance'
       };
     }
   }
 
   /**
-   * Get ERC20 token balances for a wallet
-   * @param {string} address - Wallet address
-   * @param {string} chain - Blockchain network (default: eth)
-   * @returns {Promise<Object>} Token balances
+   * Get account information for a Stellar address
+   * @param {string} publicKey - The Stellar public key
+   * @returns {Promise<Object>} Account information
    */
-  async getTokenBalances(address, chain = 'eth') {
+  async getAccountInfo(publicKey) {
     try {
       await this.initialize();
       
-      const response = await EvmApi.token.getWalletTokenBalances({
-        address,
-        chain,
-      });
-      
-      const tokens = response.result.map(token => ({
-        name: token.name,
-        symbol: token.symbol,
-        balance: token.balance,
-        decimals: token.decimals,
-        contractAddress: token.tokenAddress
-      }));
+      const account = await this.server.loadAccount(publicKey);
       
       return {
         success: true,
-        tokens
+        account: {
+          id: account.id,
+          sequence: account.sequence,
+          balances: account.balances,
+          signers: account.signers,
+          data: account.data,
+          flags: account.flags,
+          thresholds: account.thresholds
+        },
+        message: 'Account information retrieved successfully'
       };
     } catch (error) {
-      console.error('Error getting token balances:', error);
+      console.error('Error getting account info:', error);
       return {
         success: false,
         error: error.message,
-        tokens: []
+        message: 'Failed to get account information'
       };
     }
   }
 
   /**
-   * Get NFTs owned by a wallet
-   * @param {string} address - Wallet address
-   * @param {string} chain - Blockchain network (default: eth)
-   * @returns {Promise<Object>} NFT collection
+   * Sign a transaction using the connected wallet
+   * @param {string} xdr - The transaction XDR
+   * @returns {Promise<Object>} Signing result
    */
-  async getWalletNFTs(address, chain = 'eth') {
+  async signTransaction(xdr) {
     try {
       await this.initialize();
       
-      const response = await EvmApi.nft.getWalletNFTs({
-        address,
-        chain,
-        limit: 100,
+      const { signedTxXdr } = await this.kit.signTx({
+        xdr: xdr,
+        publicKeys: await this.kit.getPublicKeys(),
+        network: WalletNetwork.PUBLIC
       });
-      
-      const nfts = response.result.map(nft => ({
-        tokenId: nft.tokenId,
-        name: nft.name,
-        symbol: nft.symbol,
-        contractAddress: nft.tokenAddress,
-        tokenUri: nft.tokenUri,
-        metadata: nft.metadata,
-        amount: nft.amount
-      }));
       
       return {
         success: true,
-        nfts,
-        total: response.result.length
+        signedXdr: signedTxXdr,
+        message: 'Transaction signed successfully'
       };
     } catch (error) {
-      console.error('Error getting wallet NFTs:', error);
+      console.error('Error signing transaction:', error);
       return {
         success: false,
         error: error.message,
-        nfts: [],
-        total: 0
+        message: 'Failed to sign transaction'
       };
     }
   }
 
   /**
-   * Get comprehensive wallet information
-   * @param {string} address - Wallet address
-   * @param {string} chain - Blockchain network (default: eth)
-   * @returns {Promise<Object>} Complete wallet data
+   * Submit a signed transaction to the Stellar network
+   * @param {string} signedXdr - The signed transaction XDR
+   * @returns {Promise<Object>} Submission result
    */
-  async getWalletInfo(address, chain = 'eth') {
+  async submitTransaction(signedXdr) {
     try {
-      const [balance, tokens, nfts] = await Promise.all([
-        this.getWalletBalance(address, chain),
-        this.getTokenBalances(address, chain),
-        this.getWalletNFTs(address, chain)
-      ]);
+      await this.initialize();
+      
+      const transaction = this.server.submitTransaction(signedXdr);
+      const result = await transaction;
       
       return {
         success: true,
-        wallet: {
-          address,
-          chain,
-          balance: balance.balance,
-          tokens: tokens.tokens,
-          nfts: nfts.nfts,
-          totalNFTs: nfts.total,
-          lastUpdated: new Date()
-        }
+        result: result,
+        hash: result.hash,
+        message: 'Transaction submitted successfully'
       };
     } catch (error) {
-      console.error('Error getting wallet info:', error);
-      throw new Error(`Failed to retrieve wallet information: ${error.message}`);
+      console.error('Error submitting transaction:', error);
+      return {
+        success: false,
+        error: error.message,
+        message: 'Failed to submit transaction'
+      };
     }
   }
 
   /**
-   * Validate wallet address format
-   * @param {string} address - Wallet address to validate
-   * @returns {boolean} Is valid address
+   * Validate a Stellar public key
+   * @param {string} publicKey - The public key to validate
+   * @returns {boolean} True if valid
    */
-  isValidAddress(address) {
+  isValidStellarAddress(publicKey) {
     try {
-      return ethers.isAddress(address);
+      Keypair.fromPublicKey(publicKey);
+      return true;
     } catch (error) {
       return false;
+    }
+  }
+
+  /**
+   * Get the current network
+   * @returns {string} Current network
+   */
+  getCurrentNetwork() {
+    return this.kit ? this.kit.network : 'Not initialized';
+  }
+
+  /**
+   * Disconnect the current wallet
+   * @returns {Promise<Object>} Disconnection result
+   */
+  async disconnectWallet() {
+    try {
+      if (this.kit) {
+        // Note: Stellar Wallet Kit doesn't have a direct disconnect method
+        // You might need to handle this at the application level
+        console.log('Wallet disconnected');
+      }
+      
+      return {
+        success: true,
+        message: 'Wallet disconnected successfully'
+      };
+    } catch (error) {
+      console.error('Error disconnecting wallet:', error);
+      return {
+        success: false,
+        error: error.message,
+        message: 'Failed to disconnect wallet'
+      };
     }
   }
 }

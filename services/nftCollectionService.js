@@ -1,6 +1,7 @@
 const NFTCollection = require('../models/NFTCollection');
 const Brand = require('../models/Brand');
 const blockchainService = require('./blockchainService');
+const { Keypair, Asset } = require('@stellar/stellar-sdk');
 
 class NFTCollectionService {
   async createNFTCollection(brandId, collectionData, userId) {
@@ -19,31 +20,36 @@ class NFTCollectionService {
       // Validate collection data
       this.validateCollectionData(collectionData);
       
+      // Generate a unique issuer keypair for this collection
+      const issuerKeypair = Keypair.random();
+      
       // Create NFT collection record with pending status
       const nftCollection = new NFTCollection({
         name: collectionData.name,
         description: collectionData.description,
         symbol: collectionData.symbol,
         brand_id: brandId,
-        contract_type: collectionData.contractType || 'ERC721',
+        contract_type: 'STELLAR_ASSET', // Stellar uses assets instead of contracts
         max_supply: collectionData.maxSupply,
         mint_price: collectionData.mintPrice || '0',
-        network: collectionData.network || 'ethereum',
+        network: collectionData.network || 'stellar-testnet',
         status: 'pending',
         metadata: {
           base_uri: collectionData.baseTokenURI,
           external_url: collectionData.externalUrl,
-          image: collectionData.image
+          image: collectionData.image,
+          issuer_secret: issuerKeypair.secret(), // Store securely in production
+          issuer_public: issuerKeypair.publicKey()
         },
-        contract_address: '0x0000000000000000000000000000000000000000' // Temporary placeholder
+        contract_address: issuerKeypair.publicKey() // In Stellar, the issuer address acts as the "contract"
       });
       
       await nftCollection.save();
       
-      // Deploy smart contract asynchronously
-      this.deployContractAsync(nftCollection._id, collectionData)
+      // Setup issuer account asynchronously
+      this.setupIssuerAccountAsync(nftCollection._id, issuerKeypair)
         .catch(error => {
-          console.error('Contract deployment failed:', error);
+          console.error('Issuer account setup failed:', error);
           this.updateCollectionStatus(nftCollection._id, 'failed', { error: error.message });
         });
       
@@ -54,7 +60,7 @@ class NFTCollectionService {
     }
   }
   
-  async deployContractAsync(collectionId, collectionData) {
+  async setupIssuerAccountAsync(collectionId, issuerKeypair) {
     try {
       // Update status to deploying
       await this.updateCollectionStatus(collectionId, 'deploying');
@@ -64,104 +70,102 @@ class NFTCollectionService {
         throw new Error('Collection not found');
       }
       
-      // Prepare deployment data
-      const deploymentData = {
-        name: collection.name,
-        symbol: collection.symbol,
-        maxSupply: collection.max_supply,
-        mintPrice: collection.mint_price,
-        baseTokenURI: collection.metadata.base_uri || `https://api.example.com/metadata/${collectionId}`,
-        owner: process.env.CONTRACT_OWNER_ADDRESS || '0x742d35Cc6634C0532925a3b8D0C9C0E3C5C0C0C0'
-      };
+      // Create and fund the issuer account
+      const setupResult = await blockchainService.createAndFundAccount(
+        issuerKeypair.publicKey(),
+        issuerKeypair.secret()
+      );
       
-      let deploymentResult;
-      
-      // Deploy based on contract type
-      if (collection.contract_type === 'ERC721') {
-        deploymentResult = await blockchainService.deployNFTCollection721(
-          deploymentData,
-          collection.network,
-          process.env.NODE_ENV !== 'production' // Use testnet for non-production
-        );
-      } else if (collection.contract_type === 'ERC1155') {
-        deploymentResult = await blockchainService.deployNFTCollection1155(
-          deploymentData,
-          collection.network,
-          process.env.NODE_ENV !== 'production'
-        );
-      } else {
-        throw new Error(`Unsupported contract type: ${collection.contract_type}`);
+      if (!setupResult.success) {
+        throw new Error(`Failed to setup issuer account: ${setupResult.error}`);
       }
       
       // Update collection with deployment results
       await NFTCollection.findByIdAndUpdate(collectionId, {
-        contract_address: deploymentResult.contractAddress,
-        deployment_tx_hash: deploymentResult.transactionHash,
-        deployment_block_number: deploymentResult.blockNumber,
-        status: 'deployed',
-        updated_at: new Date()
+        status: 'active',
+        deployment_tx_hash: setupResult.transactionHash,
+        deployment_ledger: setupResult.ledger,
+        'metadata.account_funded': true,
+        'metadata.starting_balance': setupResult.balance
       });
       
-      console.log(`Contract deployed successfully for collection ${collectionId}:`, deploymentResult);
-      return deploymentResult;
+      console.log(`NFT Collection ${collection.name} issuer account setup completed`);
+      console.log(`Issuer address: ${issuerKeypair.publicKey()}`);
+      
     } catch (error) {
-      console.error('Contract deployment failed:', error);
-      await this.updateCollectionStatus(collectionId, 'failed', { error: error.message });
+      console.error('Error setting up issuer account:', error);
+      await this.updateCollectionStatus(collectionId, 'failed', {
+        error: error.message,
+        timestamp: new Date()
+      });
       throw error;
     }
   }
   
   async updateCollectionStatus(collectionId, status, additionalData = {}) {
     try {
-      const updateData = {
-        status,
-        updated_at: new Date(),
-        ...additionalData
-      };
-      
+      const updateData = { status, ...additionalData };
       await NFTCollection.findByIdAndUpdate(collectionId, updateData);
+      console.log(`Collection ${collectionId} status updated to: ${status}`);
     } catch (error) {
-      console.error('Failed to update collection status:', error);
+      console.error('Error updating collection status:', error);
     }
   }
   
   validateCollectionData(data) {
-    const errors = [];
+    const requiredFields = ['name', 'symbol'];
     
-    if (!data.name || data.name.trim().length === 0) {
-      errors.push('Collection name is required');
+    for (const field of requiredFields) {
+      if (!data[field]) {
+        throw new Error(`Missing required field: ${field}`);
+      }
     }
     
-    if (!data.description || data.description.trim().length === 0) {
-      errors.push('Collection description is required');
+    // Validate Stellar asset code (max 12 characters, alphanumeric)
+    if (data.symbol && (data.symbol.length > 12 || !/^[A-Z0-9]+$/.test(data.symbol))) {
+      throw new Error('Symbol must be alphanumeric and max 12 characters for Stellar assets');
     }
     
-    if (!data.symbol || data.symbol.trim().length === 0) {
-      errors.push('Collection symbol is required');
+    // Validate name length
+    if (data.name && data.name.length > 100) {
+      throw new Error('Collection name must be less than 100 characters');
     }
     
-    if (data.symbol && data.symbol.length > 10) {
-      errors.push('Symbol cannot exceed 10 characters');
+    // Validate description length
+    if (data.description && data.description.length > 1000) {
+      throw new Error('Description must be less than 1000 characters');
     }
     
-    if (data.maxSupply && (data.maxSupply < 1 || data.maxSupply > 1000000)) {
-      errors.push('Max supply must be between 1 and 1,000,000');
+    // Validate max supply
+    if (data.maxSupply && (isNaN(data.maxSupply) || data.maxSupply <= 0)) {
+      throw new Error('Max supply must be a positive number');
     }
     
-    if (data.mintPrice && isNaN(parseFloat(data.mintPrice))) {
-      errors.push('Mint price must be a valid number');
+    // Validate mint price
+    if (data.mintPrice && (isNaN(data.mintPrice) || data.mintPrice < 0)) {
+      throw new Error('Mint price must be a non-negative number');
     }
     
-    if (data.contractType && !['ERC721', 'ERC1155'].includes(data.contractType)) {
-      errors.push('Contract type must be either ERC721 or ERC1155');
+    // Validate URLs
+    if (data.baseTokenURI && !this.isValidUrl(data.baseTokenURI)) {
+      throw new Error('Invalid base token URI format');
     }
     
-    if (data.network && !['ethereum', 'polygon', 'bsc', 'arbitrum'].includes(data.network)) {
-      errors.push('Network must be one of: ethereum, polygon, bsc, arbitrum');
+    if (data.externalUrl && !this.isValidUrl(data.externalUrl)) {
+      throw new Error('Invalid external URL format');
     }
     
-    if (errors.length > 0) {
-      throw new Error(`Validation failed: ${errors.join(', ')}`);
+    if (data.image && !this.isValidUrl(data.image)) {
+      throw new Error('Invalid image URL format');
+    }
+  }
+  
+  isValidUrl(string) {
+    try {
+      new URL(string);
+      return true;
+    } catch (_) {
+      return false;
     }
   }
   
@@ -170,24 +174,25 @@ class NFTCollectionService {
       const skip = (page - 1) * limit;
       
       const collections = await NFTCollection.find({ brand_id: brandId })
-        .populate('brand_id', 'name description')
-        .sort({ created_at: -1 })
+        .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit);
+        .limit(limit)
+        .populate('brand_id', 'name logo')
+        .lean();
       
       const total = await NFTCollection.countDocuments({ brand_id: brandId });
       
       return {
         collections,
         pagination: {
-          current_page: page,
-          total_pages: Math.ceil(total / limit),
-          total_items: total,
-          items_per_page: limit
+          current: page,
+          total: Math.ceil(total / limit),
+          hasNext: page * limit < total,
+          hasPrev: page > 1
         }
       };
     } catch (error) {
-      console.error('Failed to get collections by brand:', error);
+      console.error('Error fetching collections by brand:', error);
       throw error;
     }
   }
@@ -195,23 +200,28 @@ class NFTCollectionService {
   async getCollectionById(collectionId) {
     try {
       const collection = await NFTCollection.findById(collectionId)
-        .populate('brand_id', 'name description owner');
+        .populate('brand_id', 'name logo description')
+        .lean();
       
       if (!collection) {
         throw new Error('Collection not found');
       }
       
+      // Remove sensitive data before returning
+      if (collection.metadata && collection.metadata.issuer_secret) {
+        delete collection.metadata.issuer_secret;
+      }
+      
       return collection;
     } catch (error) {
-      console.error('Failed to get collection by ID:', error);
+      console.error('Error fetching collection by ID:', error);
       throw error;
     }
   }
   
   async updateCollection(collectionId, updateData, userId) {
     try {
-      const collection = await NFTCollection.findById(collectionId)
-        .populate('brand_id');
+      const collection = await NFTCollection.findById(collectionId).populate('brand_id');
       
       if (!collection) {
         throw new Error('Collection not found');
@@ -219,38 +229,46 @@ class NFTCollectionService {
       
       // Check if user owns the brand
       if (collection.brand_id.owner && collection.brand_id.owner.toString() !== userId) {
-        throw new Error('Unauthorized: You do not own this brand');
+        throw new Error('Unauthorized: You do not own this collection');
       }
       
-      // Only allow certain fields to be updated after deployment
-      const allowedUpdates = ['description', 'metadata'];
+      // Only allow certain fields to be updated
+      const allowedUpdates = ['description', 'metadata.external_url', 'metadata.image'];
       const filteredUpdates = {};
       
-      Object.keys(updateData).forEach(key => {
-        if (allowedUpdates.includes(key) || collection.status === 'pending') {
+      for (const key of allowedUpdates) {
+        if (key.includes('.')) {
+          const [parent, child] = key.split('.');
+          if (updateData[parent] && updateData[parent][child] !== undefined) {
+            if (!filteredUpdates[parent]) filteredUpdates[parent] = {};
+            filteredUpdates[parent][child] = updateData[parent][child];
+          }
+        } else if (updateData[key] !== undefined) {
           filteredUpdates[key] = updateData[key];
         }
-      });
+      }
       
-      filteredUpdates.updated_at = new Date();
+      // Validate updated data
+      if (filteredUpdates.description) {
+        this.validateCollectionData({ description: filteredUpdates.description });
+      }
       
       const updatedCollection = await NFTCollection.findByIdAndUpdate(
         collectionId,
-        filteredUpdates,
+        { $set: filteredUpdates },
         { new: true, runValidators: true }
-      );
+      ).populate('brand_id', 'name logo');
       
       return updatedCollection;
     } catch (error) {
-      console.error('Failed to update collection:', error);
+      console.error('Error updating collection:', error);
       throw error;
     }
   }
   
   async deleteCollection(collectionId, userId) {
     try {
-      const collection = await NFTCollection.findById(collectionId)
-        .populate('brand_id');
+      const collection = await NFTCollection.findById(collectionId).populate('brand_id');
       
       if (!collection) {
         throw new Error('Collection not found');
@@ -258,41 +276,118 @@ class NFTCollectionService {
       
       // Check if user owns the brand
       if (collection.brand_id.owner && collection.brand_id.owner.toString() !== userId) {
-        throw new Error('Unauthorized: You do not own this brand');
+        throw new Error('Unauthorized: You do not own this collection');
       }
       
-      // Only allow deletion if not deployed
-      if (collection.status === 'deployed') {
-        throw new Error('Cannot delete deployed collections');
+      // Check if collection has any minted NFTs
+      const NFTTransaction = require('../models/NFTTransaction');
+      const mintedNFTs = await NFTTransaction.countDocuments({
+        contractAddress: collection.contract_address,
+        status: 'confirmed'
+      });
+      
+      if (mintedNFTs > 0) {
+        throw new Error('Cannot delete collection with minted NFTs');
       }
       
       await NFTCollection.findByIdAndDelete(collectionId);
+      
       return { message: 'Collection deleted successfully' };
     } catch (error) {
-      console.error('Failed to delete collection:', error);
+      console.error('Error deleting collection:', error);
       throw error;
     }
   }
   
   async getCollectionStats(collectionId) {
     try {
-      const collection = await this.getCollectionById(collectionId);
+      const collection = await NFTCollection.findById(collectionId);
       
-      // In a real implementation, you would fetch on-chain data
-      const stats = {
-        total_supply: 0,
-        max_supply: collection.max_supply,
-        mint_price: collection.mint_price,
-        status: collection.status,
-        contract_address: collection.contract_address,
-        network: collection.network,
-        deployment_date: collection.created_at,
-        last_updated: collection.updated_at
+      if (!collection) {
+        throw new Error('Collection not found');
+      }
+      
+      const NFTTransaction = require('../models/NFTTransaction');
+      
+      // Get minting statistics
+      const totalMinted = await NFTTransaction.countDocuments({
+        contractAddress: collection.contract_address,
+        status: 'confirmed'
+      });
+      
+      const pendingMints = await NFTTransaction.countDocuments({
+        contractAddress: collection.contract_address,
+        status: 'pending'
+      });
+      
+      const failedMints = await NFTTransaction.countDocuments({
+        contractAddress: collection.contract_address,
+        status: 'failed'
+      });
+      
+      // Get unique holders
+      const uniqueHolders = await NFTTransaction.distinct('toAddress', {
+        contractAddress: collection.contract_address,
+        status: 'confirmed'
+      });
+      
+      return {
+        collection: {
+          id: collection._id,
+          name: collection.name,
+          symbol: collection.symbol,
+          status: collection.status,
+          maxSupply: collection.max_supply,
+          issuerAddress: collection.contract_address
+        },
+        stats: {
+          totalMinted,
+          pendingMints,
+          failedMints,
+          uniqueHolders: uniqueHolders.length,
+          mintingRate: totalMinted / (collection.max_supply || 1) * 100,
+          remainingSupply: (collection.max_supply || 0) - totalMinted
+        }
       };
-      
-      return stats;
     } catch (error) {
-      console.error('Failed to get collection stats:', error);
+      console.error('Error fetching collection stats:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Create a new asset for the collection
+   */
+  async createCollectionAsset(collectionId, assetCode, metadata = {}) {
+    try {
+      const collection = await NFTCollection.findById(collectionId);
+      
+      if (!collection) {
+        throw new Error('Collection not found');
+      }
+      
+      if (collection.status !== 'active') {
+        throw new Error('Collection must be active to create assets');
+      }
+      
+      // Validate asset code for Stellar
+      if (!assetCode || assetCode.length > 12 || !/^[A-Z0-9]+$/.test(assetCode)) {
+        throw new Error('Asset code must be alphanumeric and max 12 characters');
+      }
+      
+      const issuerKeypair = Keypair.fromSecret(collection.metadata.issuer_secret);
+      
+      // Create the asset
+      const asset = new Asset(assetCode, issuerKeypair.publicKey());
+      
+      return {
+        assetCode,
+        issuer: issuerKeypair.publicKey(),
+        asset,
+        metadata
+      };
+    } catch (error) {
+      console.error('Error creating collection asset:', error);
       throw error;
     }
   }

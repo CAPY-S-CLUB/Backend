@@ -15,14 +15,14 @@ const nftCollectionSchema = new mongoose.Schema({
   },
   contract_address: {
     type: String,
-    required: [true, 'Contract address is required'],
+    required: [true, 'Issuer address is required'],
     unique: true,
     validate: {
       validator: function(v) {
-        // Ethereum address validation (42 characters, starts with 0x)
-        return /^0x[a-fA-F0-9]{40}$/.test(v);
+        // Stellar address validation (56 characters, starts with G)
+        return /^G[A-Z2-7]{55}$/.test(v);
       },
-      message: 'Invalid Ethereum contract address format'
+      message: 'Invalid Stellar issuer address format'
     }
   },
   brand_id: {
@@ -32,8 +32,9 @@ const nftCollectionSchema = new mongoose.Schema({
   },
   contract_type: {
     type: String,
-    enum: ['ERC721', 'ERC1155'],
-    required: [true, 'Contract type is required']
+    enum: ['STELLAR_ASSET'],
+    required: [true, 'Asset type is required'],
+    default: 'STELLAR_ASSET'
   },
   symbol: {
     type: String,
@@ -55,23 +56,24 @@ const nftCollectionSchema = new mongoose.Schema({
     validate: {
       validator: function(v) {
         if (!v) return true; // Optional field
-        return /^0x[a-fA-F0-9]{64}$/.test(v);
+        // Stellar transaction hash validation (64 characters, hex)
+        return /^[a-fA-F0-9]{64}$/.test(v);
       },
-      message: 'Invalid transaction hash format'
+      message: 'Invalid Stellar transaction hash format'
     }
   },
-  deployment_block_number: {
+  deployment_ledger: {
     type: Number,
     min: 0
   },
   network: {
     type: String,
-    enum: ['ethereum', 'polygon', 'bsc', 'arbitrum'],
-    default: 'ethereum'
+    enum: ['stellar-mainnet', 'stellar-testnet'],
+    default: 'stellar-testnet'
   },
   status: {
     type: String,
-    enum: ['pending', 'deploying', 'deployed', 'failed'],
+    enum: ['pending', 'creating', 'created', 'failed'],
     default: 'pending'
   },
   metadata: {
@@ -112,10 +114,10 @@ nftCollectionSchema.pre('save', function(next) {
 
 // Virtual for getting collection URL
 nftCollectionSchema.virtual('collection_url').get(function() {
-  if (this.network === 'ethereum') {
-    return `https://etherscan.io/address/${this.contract_address}`;
-  } else if (this.network === 'polygon') {
-    return `https://polygonscan.com/address/${this.contract_address}`;
+  if (this.network === 'stellar-mainnet') {
+    return `https://stellar.expert/explorer/public/account/${this.contract_address}`;
+  } else if (this.network === 'stellar-testnet') {
+    return `https://stellar.expert/explorer/testnet/account/${this.contract_address}`;
   }
   return null;
 });

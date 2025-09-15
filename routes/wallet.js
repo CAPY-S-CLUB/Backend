@@ -165,7 +165,7 @@ router.get('/:userId/wallet',
       }
 
       const { userId } = req.params;
-      const { chain = 'eth' } = req.query;
+      // Stellar network is used by default
 
       // Find user and check if wallet exists
       const user = await User.findById(userId).select('wallet_address wallet_created_at email first_name last_name');
@@ -183,16 +183,16 @@ router.get('/:userId/wallet',
         });
       }
 
-      // Validate wallet address format
-      if (!walletService.isValidAddress(user.wallet_address)) {
+      // Validate Stellar wallet address format
+      if (!walletService.isValidStellarAddress(user.wallet_address)) {
         return res.status(400).json({
           success: false,
-          message: 'Invalid wallet address format'
+          message: 'Invalid Stellar wallet address format'
         });
       }
 
-      // Get comprehensive wallet information
-      const walletInfo = await walletService.getWalletInfo(user.wallet_address, chain);
+      // Get Stellar wallet information
+      const walletInfo = await walletService.getAccountInfo(user.wallet_address);
       
       if (!walletInfo.success) {
         return res.status(500).json({
@@ -202,7 +202,7 @@ router.get('/:userId/wallet',
         });
       }
 
-      // Prepare response data
+      // Prepare response data for Stellar
       const responseData = {
         user: {
           id: user._id,
@@ -212,14 +212,12 @@ router.get('/:userId/wallet',
         wallet: {
           address: user.wallet_address,
           createdAt: user.wallet_created_at,
-          chain: walletInfo.wallet.chain,
-          balance: walletInfo.wallet.balance,
-          tokens: walletInfo.wallet.tokens,
-          nfts: {
-            items: walletInfo.wallet.nfts,
-            total: walletInfo.wallet.totalNFTs
-          },
-          lastUpdated: walletInfo.wallet.lastUpdated
+          network: 'stellar',
+          account: walletInfo.account,
+          balances: walletInfo.account?.balances || [],
+          sequence: walletInfo.account?.sequence,
+          signers: walletInfo.account?.signers || [],
+          lastUpdated: new Date().toISOString()
         }
       };
 
@@ -313,8 +311,8 @@ router.post('/:userId/wallet',
         });
       }
 
-      // Create new wallet
-      const walletResult = await walletService.createSmartWallet(userId);
+      // Create new Stellar wallet
+      const walletResult = await walletService.createStellarWallet(userId);
       
       if (!walletResult.success) {
         return res.status(500).json({
@@ -323,9 +321,9 @@ router.post('/:userId/wallet',
         });
       }
 
-      // Update user with wallet information
-      user.wallet_address = walletResult.wallet.address;
-      user.wallet_created_at = walletResult.wallet.createdAt;
+      // Update user with Stellar wallet information
+      user.wallet_address = walletResult.publicKey;
+      user.wallet_created_at = walletResult.createdAt;
       await user.save();
 
       res.status(201).json({
@@ -333,9 +331,9 @@ router.post('/:userId/wallet',
         message: 'Wallet created successfully',
         data: {
           wallet: {
-            address: walletResult.wallet.address,
-            network: walletResult.wallet.network,
-            createdAt: walletResult.wallet.createdAt
+            publicKey: walletResult.publicKey,
+            network: 'stellar',
+            createdAt: walletResult.createdAt
           }
         }
       });
@@ -404,7 +402,7 @@ router.get('/:userId/wallet/balance',
       }
 
       const { userId } = req.params;
-      const { chain = 'eth' } = req.query;
+      // Stellar network is used by default
 
       const user = await User.findById(userId).select('wallet_address');
       if (!user || !user.wallet_address) {
@@ -414,15 +412,23 @@ router.get('/:userId/wallet/balance',
         });
       }
 
-      const balanceResult = await walletService.getWalletBalance(user.wallet_address, chain);
+      const balanceResult = await walletService.getWalletBalance(user.wallet_address);
+      
+      if (!balanceResult.success) {
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to retrieve wallet balance',
+          error: balanceResult.error
+        });
+      }
       
       res.status(200).json({
         success: true,
-        message: 'Wallet balance retrieved successfully',
+        message: 'Stellar wallet balance retrieved successfully',
         data: {
           address: user.wallet_address,
-          balance: balanceResult.balance,
-          chain
+          balances: balanceResult.balances,
+          network: 'stellar'
         }
       });
 

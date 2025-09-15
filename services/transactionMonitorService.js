@@ -1,7 +1,7 @@
 const NFTTransaction = require('../models/NFTTransaction');
 const EventLog = require('../models/EventLog');
 const eventService = require('./eventService');
-const { ethers } = require('ethers');
+const StellarSdk = require('@stellar/stellar-sdk');
 
 class TransactionMonitorService {
   constructor() {
@@ -32,7 +32,9 @@ class TransactionMonitorService {
       // Configurar providers para diferentes redes
       if (config.networks) {
         for (const [networkName, rpcUrl] of Object.entries(config.networks)) {
-          this.providers.set(networkName, new ethers.JsonRpcProvider(rpcUrl));
+          // Stellar uses Horizon servers instead of RPC providers
+    const server = networkName === 'testnet' ? new StellarSdk.Horizon.Server('https://horizon-testnet.stellar.org') : new StellarSdk.Horizon.Server('https://horizon.stellar.org');
+    this.providers.set(networkName, server);
         }
       }
 
@@ -147,7 +149,7 @@ class TransactionMonitorService {
    */
   async checkTransactionStatus(transaction) {
     try {
-      const provider = this.getProviderForNetwork(transaction.network || 'ethereum');
+      const server = this.getProviderForNetwork(transaction.network || 'stellar');
       
       if (!provider) {
         throw new Error(`No provider configured for network: ${transaction.network}`);
@@ -296,7 +298,7 @@ class TransactionMonitorService {
   /**
    * Obter provider para uma rede específica
    * @param {string} network - Nome da rede
-   * @returns {ethers.Provider} Provider da rede
+   * @returns {StellarSdk.Horizon.Server} Servidor Horizon da rede Stellar
    */
   getProviderForNetwork(network) {
     return this.providers.get(network);

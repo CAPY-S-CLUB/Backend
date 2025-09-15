@@ -31,10 +31,10 @@ const { body, param, query, validationResult } = require('express-validator');
  *           maxLength: 10
  *           example: "AWESOME"
  *         contractType:
- *           type: string
- *           enum: [ERC721, ERC1155]
- *           description: Type of smart contract
- *           example: "ERC721"
+           type: string
+           enum: [STELLAR_ASSET]
+           description: Type of Stellar asset
+           example: "STELLAR_ASSET"
  *         maxSupply:
  *           type: integer
  *           minimum: 1
@@ -42,14 +42,14 @@ const { body, param, query, validationResult } = require('express-validator');
  *           description: Maximum number of tokens that can be minted
  *           example: 10000
  *         mintPrice:
- *           type: string
- *           description: Price to mint each token (in ETH)
- *           example: "0.05"
+           type: string
+           description: Price to mint each token (in XLM)
+           example: "0.05"
  *         network:
- *           type: string
- *           enum: [ethereum, polygon, bsc, arbitrum]
- *           description: Blockchain network for deployment
- *           example: "ethereum"
+           type: string
+           enum: [stellar-mainnet, stellar-testnet]
+           description: Stellar network for deployment
+           example: "stellar-testnet"
  *         baseTokenURI:
  *           type: string
  *           description: Base URI for token metadata
@@ -79,15 +79,15 @@ const { body, param, query, validationResult } = require('express-validator');
  *           type: string
  *           description: Symbol for the NFT collection
  *         contract_address:
- *           type: string
- *           description: Smart contract address
+           type: string
+           description: Stellar asset issuer address
  *         brand_id:
  *           type: string
  *           description: Associated brand ID
  *         contract_type:
- *           type: string
- *           enum: [ERC721, ERC1155]
- *           description: Type of smart contract
+           type: string
+           enum: [STELLAR_ASSET]
+           description: Type of Stellar asset
  *         max_supply:
  *           type: integer
  *           description: Maximum number of tokens
@@ -95,8 +95,8 @@ const { body, param, query, validationResult } = require('express-validator');
  *           type: string
  *           description: Price to mint each token
  *         network:
- *           type: string
- *           description: Blockchain network
+           type: string
+           description: Stellar network
  *         status:
  *           type: string
  *           enum: [pending, deploying, deployed, failed]
@@ -190,8 +190,8 @@ const validateNFTCollection = [
     .withMessage('Symbol must be between 1 and 10 characters'),
   body('contractType')
     .optional()
-    .isIn(['ERC721', 'ERC1155'])
-    .withMessage('Contract type must be ERC721 or ERC1155'),
+    .isIn(['STELLAR_ASSET'])
+    .withMessage('Contract type must be STELLAR_ASSET'),
   body('maxSupply')
     .optional()
     .isInt({ min: 1, max: 1000000 })
@@ -202,8 +202,8 @@ const validateNFTCollection = [
     .withMessage('Mint price must be a valid decimal number'),
   body('network')
     .optional()
-    .isIn(['ethereum', 'polygon', 'bsc', 'arbitrum'])
-    .withMessage('Network must be ethereum, polygon, bsc, or arbitrum'),
+    .isIn(['stellar-mainnet', 'stellar-testnet'])
+    .withMessage('Network must be stellar-mainnet or stellar-testnet'),
   body('baseTokenURI')
     .optional()
     .isURL()
@@ -321,7 +321,7 @@ router.post('/brands/:brandId/nft-collections',
       
       res.status(201).json({
         success: true,
-        message: 'NFT collection created successfully. Smart contract deployment is in progress.',
+        message: 'NFT collection created successfully. Stellar asset issuer account setup is in progress.',
         data: collection
       });
     } catch (error) {

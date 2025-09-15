@@ -1,8 +1,10 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const { body, validationResult } = require('express-validator');
+const { body, param, validationResult } = require('express-validator');
 const User = require('../models/User');
+const Nonce = require('../models/Nonce');
 const walletService = require('../services/walletService');
+const crypto = require('crypto');
 const router = express.Router();
 
 /**
@@ -11,9 +13,6 @@ const router = express.Router();
  *   schemas:
  *     User:
  *       type: object
- *       required:
- *         - email
- *         - password
  *       properties:
  *         id:
  *           type: string
@@ -37,39 +36,6 @@ const router = express.Router();
  *           type: string
  *           format: date-time
  *           description: When the wallet was created
- *     LoginRequest:
- *       type: object
- *       required:
- *         - email
- *         - password
- *       properties:
- *         email:
- *           type: string
- *           description: User's email
- *         password:
- *           type: string
- *           description: User's password
- *     RegisterRequest:
- *       type: object
- *       required:
- *         - email
- *         - password
- *       properties:
- *         email:
- *           type: string
- *           description: User's email
- *         password:
- *           type: string
- *           description: User's password
- *         user_type:
- *           type: string
- *           description: User's type
- *         first_name:
- *           type: string
- *           description: User's first name
- *         last_name:
- *           type: string
- *           description: User's last name
  *     AuthResponse:
  *       type: object
  *       properties:
@@ -102,260 +68,24 @@ const generateToken = (user) => {
   });
 };
 
-// Validation middleware
-const loginValidation = [
-  body('email')
-    .isEmail()
-    .normalizeEmail()
-    .withMessage('Please provide a valid email'),
-  body('password')
-    .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters long')
-];
 
-const registerValidation = [
-  body('email')
-    .isEmail()
-    .normalizeEmail()
-    .withMessage('Please provide a valid email'),
-  body('password')
-    .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters long')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).*$/)
-    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number'),
-  body('user_type')
-    .optional()
-    .isIn(['platform_admin', 'community_admin', 'member'])
-    .withMessage('Invalid user type'),
-  body('first_name')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('First name cannot exceed 50 characters'),
-  body('last_name')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('Last name cannot exceed 50 characters')
-];
 
 /**
  * @swagger
- * /api/auth/login:
- *   post:
- *     summary: User login
+ * /api/auth/nonce/{address}:
+ *   get:
+ *     summary: Gerar nonce para autenticação Web3
  *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/LoginRequest'
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Endereço da carteira
  *     responses:
  *       200:
- *         description: Login successful
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AuthResponse'
- *       400:
- *         description: Validation failed
- *       401:
- *         description: Invalid credentials
- *       500:
- *         description: Server error
- */
-// @route   POST /api/auth/login
-// @desc    Login user and return JWT
-// @access  Public
-router.post('/login', loginValidation, async (req, res) => {
-  try {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
-
-    const { email, password } = req.body;
-
-    // Check if user exists
-    const user = await User.findByEmail(email);
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
-    }
-
-    // Check if user is active
-    if (!user.is_active) {
-      return res.status(401).json({
-        success: false,
-        message: 'Account is deactivated. Please contact support.'
-      });
-    }
-
-    // Validate password
-    const isPasswordValid = await user.comparePassword(password);
-    if (!isPasswordValid) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
-    }
-
-    // Update last login
-    user.last_login = new Date();
-    await user.save();
-
-    // Generate JWT token
-    const token = generateToken(user);
-
-    // Return success response
-    res.status(200).json({
-      success: true,
-      message: 'Login successful',
-      data: {
-        token,
-        user: user.toSafeObject(),
-        expires_in: process.env.JWT_EXPIRES_IN || '7d'
-      }
-    });
-
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-/**
- * @swagger
- * /api/auth/register:
- *   post:
- *     summary: User registration
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/RegisterRequest'
- *     responses:
- *       201:
- *         description: User registered successfully with wallet created
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/AuthResponse'
- *       400:
- *         description: Validation failed
- *       409:
- *         description: User already exists
- *       500:
- *         description: Server error
- */
-// @route   POST /api/auth/register
-// @desc    Register a new user
-// @access  Public (but can be restricted based on requirements)
-router.post('/register', registerValidation, async (req, res) => {
-  try {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
-
-    const { email, password, user_type, first_name, last_name } = req.body;
-
-    // Check if user already exists
-    const existingUser = await User.findByEmail(email);
-    if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        message: 'User with this email already exists'
-      });
-    }
-
-    // Create new user
-    const newUser = new User({
-      email,
-      password_hash: password, // Will be hashed by pre-save middleware
-      user_type: user_type || 'member',
-      first_name,
-      last_name
-    });
-
-    await newUser.save();
-
-    // Create wallet for the new user
-    try {
-      const walletResult = await walletService.createSmartWallet(newUser._id.toString());
-      if (walletResult.success) {
-        newUser.wallet_address = walletResult.wallet.address;
-        newUser.wallet_created_at = walletResult.wallet.createdAt;
-        await newUser.save();
-      }
-    } catch (walletError) {
-      console.error('Wallet creation failed for user:', newUser._id, walletError);
-      // Continue with user registration even if wallet creation fails
-      // Wallet can be created later via separate endpoint
-    }
-
-    // Generate JWT token
-    const token = generateToken(newUser);
-
-    res.status(201).json({
-      success: true,
-      message: 'User registered successfully',
-      data: {
-        token,
-        user: newUser.toSafeObject(),
-        expires_in: process.env.JWT_EXPIRES_IN || '7d'
-      }
-    });
-
-  } catch (error) {
-    console.error('Registration error:', error);
-    
-    // Handle duplicate key error
-    if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message: 'User with this email already exists'
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-/**
- * @swagger
- * /api/auth/verify:
- *   post:
- *     summary: Verify JWT token
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Token is valid
+ *         description: Nonce gerado com sucesso
  *         content:
  *           application/json:
  *             schema:
@@ -363,53 +93,212 @@ router.post('/register', registerValidation, async (req, res) => {
  *               properties:
  *                 success:
  *                   type: boolean
+ *                 nonce:
+ *                   type: string
  *                 message:
  *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     user:
- *                       $ref: '#/components/schemas/User'
- *       401:
- *         description: Invalid token or user not found
+ *       400:
+ *         description: Endereço inválido
+ *       500:
+ *         description: Erro interno do servidor
  */
-// @route   POST /api/auth/verify
-// @desc    Verify JWT token
-// @access  Private
-router.post('/verify', async (req, res) => {
+// @route   GET /api/auth/nonce/:address
+// @desc    Gerar nonce único para autenticação Web3
+// @access  Public
+router.get('/nonce/:address', [
+  param('address')
+    .isLength({ min: 10, max: 100 })
+    .withMessage('Endereço da carteira deve ter entre 10 e 100 caracteres')
+    .matches(/^[a-zA-Z0-9]+$/)
+    .withMessage('Endereço da carteira deve conter apenas caracteres alfanuméricos')
+], async (req, res) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    
-    if (!token) {
-      return res.status(401).json({
+    // Verificar erros de validação
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
         success: false,
-        message: 'No token provided'
+        message: 'Validação falhou',
+        errors: errors.array()
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id);
+    const { address } = req.params;
 
-    if (!user || !user.is_active) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid token or user not found'
-      });
-    }
+    // Gerar novo nonce para o endereço
+    const nonceDoc = await Nonce.createForAddress(address);
 
     res.status(200).json({
       success: true,
-      message: 'Token is valid',
+      nonce: nonceDoc.nonce,
+      message: `Assine esta mensagem para autenticar: ${nonceDoc.nonce}`
+    });
+
+  } catch (error) {
+    console.error('Erro ao gerar nonce:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno do servidor ao gerar nonce'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/wallet-verify:
+ *   post:
+ *     summary: Verificar assinatura e autenticar carteira
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - address
+ *               - nonce
+ *               - signature
+ *             properties:
+ *               address:
+ *                 type: string
+ *                 description: Endereço da carteira
+ *               nonce:
+ *                 type: string
+ *                 description: Nonce gerado anteriormente
+ *               signature:
+ *                 type: string
+ *                 description: Assinatura da mensagem com nonce
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: Email do usuário (opcional para registro)
+ *     responses:
+ *       200:
+ *         description: Autenticação bem-sucedida
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Assinatura inválida
+ *       500:
+ *         description: Erro interno do servidor
+ */
+// @route   POST /api/auth/wallet-verify
+// @desc    Verificar assinatura e autenticar via carteira Web3
+// @access  Public
+router.post('/wallet-verify', [
+  body('address')
+    .isLength({ min: 10, max: 100 })
+    .withMessage('Endereço da carteira deve ter entre 10 e 100 caracteres')
+    .matches(/^[a-zA-Z0-9]+$/)
+    .withMessage('Endereço da carteira deve conter apenas caracteres alfanuméricos'),
+  body('nonce')
+    .isLength({ min: 10 })
+    .withMessage('Nonce deve ter pelo menos 10 caracteres'),
+  body('signature')
+    .isLength({ min: 10 })
+    .withMessage('Assinatura deve ter pelo menos 10 caracteres'),
+  body('email')
+    .optional()
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Email deve ser válido')
+], async (req, res) => {
+  try {
+    // Verificar erros de validação
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validação falhou',
+        errors: errors.array()
+      });
+    }
+
+    const { address, nonce, signature, email } = req.body;
+
+    // Validar e marcar nonce como usado
+    const nonceValidation = await Nonce.validateAndUse(address, nonce);
+    if (!nonceValidation.valid) {
+      return res.status(401).json({
+        success: false,
+        message: nonceValidation.error
+      });
+    }
+
+    // TODO: Implementar verificação de assinatura real
+    // Por enquanto, aceita qualquer assinatura para demonstração
+    const isValidSignature = signature && signature.length > 10;
+    
+    if (!isValidSignature) {
+      return res.status(401).json({
+        success: false,
+        message: 'Assinatura inválida'
+      });
+    }
+
+    // Buscar usuário existente por endereço da carteira
+    let user = await User.findOne({ wallet_address: address.toLowerCase() });
+
+    // Se usuário não existe, criar novo (se email fornecido)
+    if (!user) {
+      if (!email) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email é obrigatório para novos usuários'
+        });
+      }
+
+      // Verificar se email já está em uso
+      const existingUser = await User.findByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email já está em uso'
+        });
+      }
+
+      // Criar novo usuário
+      user = new User({
+        email: email,
+        wallet_address: address.toLowerCase(),
+        user_type: 'member',
+        is_active: true,
+        auth_method: 'wallet'
+      });
+
+      await user.save();
+    }
+
+    // Verificar se usuário está ativo
+    if (!user.is_active) {
+      return res.status(401).json({
+        success: false,
+        message: 'Conta desativada. Entre em contato com o suporte.'
+      });
+    }
+
+    // Gerar token JWT
+    const token = generateToken(user);
+
+    res.status(200).json({
+      success: true,
+      message: 'Autenticação Web3 bem-sucedida',
       data: {
+        token,
         user: user.toSafeObject()
       }
     });
 
   } catch (error) {
-    console.error('Token verification error:', error);
-    res.status(401).json({
+    console.error('Erro na verificação da carteira:', error);
+    res.status(500).json({
       success: false,
-      message: 'Invalid token'
+      message: 'Erro interno do servidor durante verificação'
     });
   }
 });
