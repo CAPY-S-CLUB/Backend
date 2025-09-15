@@ -362,6 +362,10 @@ const swaggerOptions = {
       {
         name: 'Posts',
         description: 'Timeline and exclusive wall posts management'
+      },
+      {
+        name: 'Exclusive Content',
+        description: 'Exclusive content access control with community-based authorization'
       }
     ]
   },

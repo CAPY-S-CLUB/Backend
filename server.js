@@ -53,6 +53,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/brands', require('./routes/brands'));
 app.use('/api/users', require('./routes/wallet'));
 app.use('/api/posts', require('./routes/posts'));
+app.use('/api/content', require('./routes/content'));
 app.use('/api/products', require('./routes/products'));
 app.use('/api', require('./routes/nftCollection'));
 app.use('/api', require('./routes/communityDashboard'));
