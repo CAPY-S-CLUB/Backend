@@ -158,8 +158,138 @@ const validateCommunityExists = async (req, res, next) => {
   }
 };
 
+/**
+ * Middleware para verificar se o usuário é membro ou admin da comunidade
+ * @param {Array} allowedRoles - Roles permitidos: ['MEMBER', 'COMMUNITY_ADMIN']
+ */
+const requireCommunityMembership = (allowedRoles = ['MEMBER', 'COMMUNITY_ADMIN']) => {
+  return async (req, res, next) => {
+    try {
+      const User = require('../models/User');
+      const userId = req.user?.id || req.user?._id;
+      
+      if (!userId) {
+        return res.status(401).json({
+          error: 'Authentication required',
+          message: 'User must be authenticated to access this resource'
+        });
+      }
+
+      // Busca o usuário com informações da comunidade
+      const user = await User.findById(userId).populate('community_id');
+      
+      if (!user) {
+        return res.status(404).json({
+          error: 'User not found',
+          message: 'Authenticated user not found in database'
+        });
+      }
+
+      if (!user.community_id) {
+        return res.status(403).json({
+          error: 'No community membership',
+          message: 'User is not a member of any community'
+        });
+      }
+
+      // Verifica se o role do usuário está entre os permitidos
+      if (!allowedRoles.includes(user.role)) {
+        return res.status(403).json({
+          error: 'Insufficient permissions',
+          message: `Access denied. Required roles: ${allowedRoles.join(', ')}`
+        });
+      }
+
+      // Adiciona informações do usuário e comunidade ao request
+      req.userCommunity = {
+        userId: user._id,
+        communityId: user.community_id._id,
+        userRole: user.role,
+        community: user.community_id
+      };
+
+      next();
+    } catch (error) {
+      console.error('Community auth middleware error:', error);
+      return res.status(500).json({
+        error: 'Internal server error',
+        message: 'Error verifying community membership'
+      });
+    }
+  };
+};
+
+/**
+ * Middleware para verificar se o usuário pode acessar/modificar um post específico
+ */
+const requirePostOwnershipOrAdmin = async (req, res, next) => {
+  try {
+    const Post = require('../models/Post');
+    const User = require('../models/User');
+    const postId = req.params.id;
+    const userId = req.user?.id || req.user?._id;
+    
+    if (!userId) {
+      return res.status(401).json({
+        error: 'Authentication required',
+        message: 'User must be authenticated'
+      });
+    }
+
+    // Busca o post
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      return res.status(404).json({
+        error: 'Post not found',
+        message: 'The requested post does not exist'
+      });
+    }
+
+    // Busca o usuário
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found',
+        message: 'Authenticated user not found'
+      });
+    }
+
+    // Verifica se é o autor do post OU admin da comunidade
+    const isAuthor = post.author_id === userId.toString();
+    const isCommunityAdmin = user.role === 'COMMUNITY_ADMIN' && user.community_id.toString() === post.community_id;
+    
+    if (!isAuthor && !isCommunityAdmin) {
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'Only the post author or community admin can perform this action'
+      });
+    }
+
+    // Adiciona informações ao request
+    req.postAccess = {
+      post,
+      isAuthor,
+      isCommunityAdmin,
+      userId,
+      userRole: user.role
+    };
+
+    next();
+  } catch (error) {
+    console.error('Post ownership middleware error:', error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: 'Error verifying post access permissions'
+    });
+  }
+};
+
 module.exports = {
   validateCommunityAdmin,
   validateCommunityMember,
-  validateCommunityExists
+  validateCommunityExists,
+  requireCommunityMembership,
+  requirePostOwnershipOrAdmin
 };

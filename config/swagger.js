@@ -115,6 +115,115 @@ const swaggerOptions = {
             }
           }
         },
+
+        Post: {
+          type: 'object',
+          properties: {
+            _id: {
+              type: 'string',
+              format: 'objectid',
+              description: 'Post unique identifier'
+            },
+            author_id: {
+              type: 'string',
+              format: 'objectid',
+              description: 'Author user ID'
+            },
+            community_id: {
+              type: 'string',
+              format: 'objectid',
+              description: 'Community ID where post belongs'
+            },
+            content: {
+              type: 'string',
+              description: 'Post content text',
+              maxLength: 2000
+            },
+            media_urls: {
+              type: 'array',
+              items: {
+                type: 'string',
+                format: 'uri'
+              },
+              description: 'Array of media URLs attached to post'
+            },
+            likes_count: {
+              type: 'integer',
+              minimum: 0,
+              description: 'Number of likes on the post'
+            },
+            created_at: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Post creation timestamp'
+            },
+            updated_at: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Post last update timestamp'
+            }
+          },
+          required: ['author_id', 'community_id', 'content']
+        },
+
+        Comment: {
+          type: 'object',
+          properties: {
+            _id: {
+              type: 'string',
+              format: 'objectid',
+              description: 'Comment unique identifier'
+            },
+            post_id: {
+              type: 'string',
+              format: 'objectid',
+              description: 'Post ID that comment belongs to'
+            },
+            author_id: {
+              type: 'string',
+              format: 'objectid',
+              description: 'Comment author user ID'
+            },
+            content: {
+              type: 'string',
+              description: 'Comment content text',
+              maxLength: 500
+            },
+            created_at: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Comment creation timestamp'
+            }
+          },
+          required: ['post_id', 'author_id', 'content']
+        },
+
+        Like: {
+          type: 'object',
+          properties: {
+            _id: {
+              type: 'string',
+              format: 'objectid',
+              description: 'Like unique identifier'
+            },
+            user_id: {
+              type: 'string',
+              format: 'objectid',
+              description: 'User who liked the post'
+            },
+            post_id: {
+              type: 'string',
+              format: 'objectid',
+              description: 'Post that was liked'
+            },
+            created_at: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Like creation timestamp'
+            }
+          },
+          required: ['user_id', 'post_id']
+        },
         
         Error: {
           type: 'object',
@@ -249,6 +358,10 @@ const swaggerOptions = {
       {
         name: 'Brands',
         description: 'Brand management operations'
+      },
+      {
+        name: 'Posts',
+        description: 'Timeline and exclusive wall posts management'
       }
     ]
   },
