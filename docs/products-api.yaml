@@ -1,0 +1,701 @@
+openapi: 3.0.0
+info:
+  title: Products API
+  description: API for managing products in communities with file upload capabilities
+  version: 1.0.0
+  contact:
+    name: Hackmeridian Team
+    email: support@hackmeridian.com
+
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+  - url: https://api.hackmeridian.com/api
+    description: Production server
+
+paths:
+  /products:
+    get:
+      summary: List all products
+      description: Retrieve a paginated list of products with filtering and search capabilities
+      tags:
+        - Products
+      parameters:
+        - name: page
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: community_id
+          in: query
+          description: Filter by community ID
+          required: false
+          schema:
+            type: string
+            format: objectid
+        - name: exclusive_to_members
+          in: query
+          description: Filter by member exclusivity
+          required: false
+          schema:
+            type: boolean
+        - name: status
+          in: query
+          description: Filter by product status
+          required: false
+          schema:
+            type: string
+            enum: [active, inactive, draft]
+            default: active
+        - name: search
+          in: query
+          description: Search in product name, description, and tags
+          required: false
+          schema:
+            type: string
+        - name: sort_by
+          in: query
+          description: Field to sort by
+          required: false
+          schema:
+            type: string
+            enum: [created_at, updated_at, name, price, view_count, like_count]
+            default: created_at
+        - name: sort_order
+          in: query
+          description: Sort order
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: min_price
+          in: query
+          description: Minimum price filter
+          required: false
+          schema:
+            type: number
+            minimum: 0
+        - name: max_price
+          in: query
+          description: Maximum price filter
+          required: false
+          schema:
+            type: number
+            minimum: 0
+        - name: tags
+          in: query
+          description: Filter by tags (comma-separated)
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Products retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      products:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Product'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Create a new product
+      description: Create a new product with optional file uploads (images and videos)
+      tags:
+        - Products
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - name
+                - description
+                - community_id
+              properties:
+                name:
+                  type: string
+                  description: Product name
+                  maxLength: 200
+                  example: "Premium Wireless Headphones"
+                description:
+                  type: string
+                  description: Product description
+                  maxLength: 2000
+                  example: "High-quality wireless headphones with noise cancellation"
+                community_id:
+                  type: string
+                  format: objectid
+                  description: ID of the community this product belongs to
+                exclusive_to_members:
+                  type: boolean
+                  description: Whether product is exclusive to community members
+                  default: false
+                price:
+                  type: number
+                  description: Product price
+                  minimum: 0
+                  example: 199.99
+                currency:
+                  type: string
+                  description: Price currency
+                  default: "USD"
+                  example: "USD"
+                tags:
+                  type: string
+                  description: Comma-separated tags
+                  example: "electronics,audio,wireless"
+                details_json:
+                  type: string
+                  description: JSON string with additional product details
+                  example: '{"color": "black", "weight": "250g"}'
+                images:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: Product images (max 10 files, 10MB each)
+                  maxItems: 10
+                videos:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: Product videos (max 5 files, 100MB each)
+                  maxItems: 5
+      responses:
+        '201':
+          description: Product created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Product created successfully"
+                  data:
+                    type: object
+                    properties:
+                      product:
+                        $ref: '#/components/schemas/Product'
+                      uploaded_files:
+                        type: object
+                        properties:
+                          images_count:
+                            type: integer
+                          videos_count:
+                            type: integer
+                          total_files:
+                            type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /products/{id}:
+    get:
+      summary: Get a specific product
+      description: Retrieve detailed information about a specific product
+      tags:
+        - Products
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Product ID
+          schema:
+            type: string
+            format: objectid
+      responses:
+        '200':
+          description: Product retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      product:
+                        $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      summary: Update a product
+      description: Update an existing product (only community admin can update)
+      tags:
+        - Products
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Product ID
+          schema:
+            type: string
+            format: objectid
+      requestBody:
+        required: false
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Product name
+                  maxLength: 200
+                description:
+                  type: string
+                  description: Product description
+                  maxLength: 2000
+                exclusive_to_members:
+                  type: boolean
+                  description: Whether product is exclusive to community members
+                price:
+                  type: number
+                  description: Product price
+                  minimum: 0
+                currency:
+                  type: string
+                  description: Price currency
+                tags:
+                  type: string
+                  description: Comma-separated tags
+                status:
+                  type: string
+                  enum: [active, inactive, draft]
+                  description: Product status
+                details_json:
+                  type: string
+                  description: JSON string with additional product details
+                remove_images:
+                  type: string
+                  description: Comma-separated URLs of images to remove
+                remove_videos:
+                  type: string
+                  description: Comma-separated URLs of videos to remove
+                images:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: New product images to add
+                videos:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: New product videos to add
+      responses:
+        '200':
+          description: Product updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Product updated successfully"
+                  data:
+                    type: object
+                    properties:
+                      product:
+                        $ref: '#/components/schemas/Product'
+                      changes:
+                        type: object
+                        properties:
+                          files_added:
+                            type: integer
+                          files_removed:
+                            type: integer
+                          images_count:
+                            type: integer
+                          videos_count:
+                            type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Delete a product
+      description: Delete a product and all associated files from cloud storage
+      tags:
+        - Products
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Product ID
+          schema:
+            type: string
+            format: objectid
+      responses:
+        '200':
+          description: Product deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Product deleted successfully"
+                  data:
+                    type: object
+                    properties:
+                      deleted_product_id:
+                        type: string
+                        format: objectid
+                      files_deleted:
+                        type: integer
+                      cloud_cleanup_success:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /products/{id}/like:
+    post:
+      summary: Like or unlike a product
+      description: Toggle like status for a product
+      tags:
+        - Products
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Product ID
+          schema:
+            type: string
+            format: objectid
+      responses:
+        '200':
+          description: Like status toggled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Product liked"
+                  data:
+                    type: object
+                    properties:
+                      product:
+                        type: object
+                        properties:
+                          _id:
+                            type: string
+                            format: objectid
+                          name:
+                            type: string
+                          like_count:
+                            type: integer
+                          liked_by:
+                            type: array
+                            items:
+                              type: string
+                              format: objectid
+                      is_liked:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Product:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: objectid
+          description: Product unique identifier
+        name:
+          type: string
+          description: Product name
+          example: "Premium Wireless Headphones"
+        description:
+          type: string
+          description: Product description
+          example: "High-quality wireless headphones with noise cancellation"
+        images_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: Array of image URLs
+          example: ["https://bucket.s3.amazonaws.com/products/images/123/image1.jpg"]
+        videos_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: Array of video URLs
+          example: ["https://bucket.s3.amazonaws.com/products/videos/123/video1.mp4"]
+        details_json:
+          type: object
+          description: Additional product details as JSON
+          example: {"color": "black", "weight": "250g", "warranty": "2 years"}
+        community_id:
+          type: object
+          description: Community information
+          properties:
+            _id:
+              type: string
+              format: objectid
+            name:
+              type: string
+            description:
+              type: string
+        exclusive_to_members:
+          type: boolean
+          description: Whether product is exclusive to community members
+          example: false
+        created_by:
+          type: object
+          description: User who created the product
+          properties:
+            _id:
+              type: string
+              format: objectid
+            username:
+              type: string
+            email:
+              type: string
+              format: email
+        status:
+          type: string
+          enum: [active, inactive, draft]
+          description: Product status
+          example: "active"
+        price:
+          type: number
+          description: Product price
+          example: 199.99
+        currency:
+          type: string
+          description: Price currency
+          example: "USD"
+        tags:
+          type: array
+          items:
+            type: string
+          description: Product tags
+          example: ["electronics", "audio", "wireless"]
+        view_count:
+          type: integer
+          description: Number of times product was viewed
+          example: 150
+        like_count:
+          type: integer
+          description: Number of likes
+          example: 25
+        liked_by:
+          type: array
+          items:
+            type: string
+            format: objectid
+          description: Array of user IDs who liked the product
+        created_at:
+          type: string
+          format: date-time
+          description: Product creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Product last update timestamp
+
+    Pagination:
+      type: object
+      properties:
+        current_page:
+          type: integer
+          description: Current page number
+          example: 1
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 5
+        total_items:
+          type: integer
+          description: Total number of items
+          example: 47
+        items_per_page:
+          type: integer
+          description: Number of items per page
+          example: 10
+        has_next_page:
+          type: boolean
+          description: Whether there is a next page
+          example: true
+        has_prev_page:
+          type: boolean
+          description: Whether there is a previous page
+          example: false
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          description: Error message
+        errors:
+          type: array
+          items:
+            type: string
+          description: Detailed error messages
+
+  responses:
+    BadRequest:
+      description: Bad request - Invalid input parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            success: false
+            message: "Validation failed"
+            errors: ["Name is required", "Invalid community ID format"]
+
+    Unauthorized:
+      description: Unauthorized - Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            success: false
+            message: "Authentication required"
+
+    Forbidden:
+      description: Forbidden - Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            success: false
+            message: "Access denied. You can only modify products from your own community."
+
+    NotFound:
+      description: Not found - Resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            success: false
+            message: "Product not found"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            success: false
+            message: "Internal server error"
+
+tags:
+  - name: Products
+    description: Product management operations
+    externalDocs:
+      description: Find out more about product management
+      url: https://docs.hackmeridian.com/products
+
+externalDocs:
+  description: Find out more about Hackmeridian API
+  url: https://docs.hackmeridian.com
