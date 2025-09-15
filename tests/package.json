@@ -1,0 +1,42 @@
+{
+  "name": "nft-reward-system-tests",
+  "version": "1.0.0",
+  "description": "Integration tests for NFT Reward System",
+  "scripts": {
+    "test": "mocha --require ./setup.js --recursive --timeout 30000",
+    "test:integration": "mocha --require ./setup.js integration/*.test.js --timeout 30000",
+    "test:watch": "mocha --require ./setup.js --recursive --timeout 30000 --watch",
+    "test:coverage": "nyc mocha --require ./setup.js --recursive --timeout 30000",
+    "test:debug": "mocha --require ./setup.js --recursive --timeout 30000 --inspect-brk"
+  },
+  "devDependencies": {
+    "mocha": "^10.2.0",
+    "chai": "^4.3.7",
+    "sinon": "^15.2.0",
+    "supertest": "^6.3.3",
+    "nyc": "^15.1.0",
+    "mongodb-memory-server": "^8.15.1"
+  },
+  "nyc": {
+    "include": [
+      "../services/**/*.js",
+      "../workers/**/*.js",
+      "../models/**/*.js"
+    ],
+    "exclude": [
+      "../tests/**/*.js",
+      "../node_modules/**"
+    ],
+    "reporter": [
+      "text",
+      "html",
+      "lcov"
+    ],
+    "report-dir": "./coverage"
+  },
+  "mocha": {
+    "timeout": 30000,
+    "recursive": true,
+    "require": "./setup.js"
+  }
+}
