@@ -217,7 +217,7 @@ const sendInvitationEmail = async (email, token, communityName, inviterName) => 
 
 /**
  * @swagger
- * /api/communities/{communityId}/dashboard-metrics:
+ * /communities/{communityId}/dashboard-metrics:
  *   get:
  *     summary: Get community dashboard metrics
  *     description: |
@@ -376,7 +376,7 @@ router.get('/communities/:communityId/dashboard-metrics',
 
 /**
  * @swagger
- * /api/communities/{communityId}/dashboard-metrics/cache:
+ * /communities/{communityId}/dashboard-metrics/cache:
  *   get:
  *     summary: Get cache status for community dashboard metrics
  *     description: Check the current cache status for community dashboard metrics
@@ -446,7 +446,7 @@ router.get('/communities/:communityId/dashboard-metrics/cache',
 
 /**
  * @swagger
- * /api/communities/{communityId}/dashboard-metrics/cache:
+ * /communities/{communityId}/dashboard-metrics/cache:
  *   delete:
  *     summary: Invalidate cache for community dashboard metrics
  *     description: Force refresh of cached dashboard metrics data
@@ -513,7 +513,7 @@ router.delete('/communities/:communityId/dashboard-metrics/cache',
 
 /**
  * @swagger
- * /api/communities/{communityId}/invites:
+ * /communities/{communityId}/invites:
  *   post:
  *     summary: Create a new invitation for a community
  *     tags: [Community Management]
@@ -628,7 +628,7 @@ router.post('/communities/:communityId/invites',
 
 /**
  * @swagger
- * /api/communities/{communityId}/members:
+ * /communities/{communityId}/members:
  *   get:
  *     summary: Get paginated list of community members
  *     tags: [Community Management]
@@ -776,7 +776,7 @@ router.get('/communities/:communityId/members',
 
 /**
  * @swagger
- * /api/communities/{communityId}/members/{memberId}:
+ * /communities/{communityId}/members/{memberId}:
  *   delete:
  *     summary: Remove a member from the community
  *     tags: [Community Management]

@@ -40,7 +40,7 @@ const swaggerOptions = {
         description: 'Development server',
       },
       {
-        url: 'https://api.hackmeridian.com/api',
+        url: 'https://api.hackmeridian.com',
         description: 'Production server',
       }
     ],

@@ -113,7 +113,7 @@ const checkWalletOwnership = async (req, res, next) => {
 
 /**
  * @swagger
- * /api/users/{userId}/wallet:
+ * /users/{userId}/wallet:
  *   get:
  *     summary: Get comprehensive wallet information
  *     tags: [Wallet]
@@ -145,7 +145,7 @@ const checkWalletOwnership = async (req, res, next) => {
  *       500:
  *         description: Server error
  */
-// @route   GET /api/users/:userId/wallet
+// @route   GET /users/:userId/wallet
 // @desc    Get user's wallet information including address, balances, and NFTs
 // @access  Private (Owner or Admin only)
 router.get('/:userId/wallet', 
@@ -240,7 +240,7 @@ router.get('/:userId/wallet',
 
 /**
  * @swagger
- * /api/users/{userId}/wallet:
+ * /users/{userId}/wallet:
  *   post:
  *     summary: Create wallet for user (if not exists)
  *     tags: [Wallet]
@@ -269,7 +269,7 @@ router.get('/:userId/wallet',
  *       500:
  *         description: Server error
  */
-// @route   POST /api/users/:userId/wallet
+// @route   POST /users/:userId/wallet
 // @desc    Create a wallet for a user (if not exists)
 // @access  Private (Owner or Admin only)
 router.post('/:userId/wallet',
@@ -351,7 +351,7 @@ router.post('/:userId/wallet',
 
 /**
  * @swagger
- * /api/users/{userId}/wallet/balance:
+ * /users/{userId}/wallet/balance:
  *   get:
  *     summary: Get wallet balance only
  *     tags: [Wallet]
@@ -383,7 +383,7 @@ router.post('/:userId/wallet',
  *       500:
  *         description: Server error
  */
-// @route   GET /api/users/:userId/wallet/balance
+// @route   GET /users/:userId/wallet/balance
 // @desc    Get wallet balance only (lighter endpoint)
 // @access  Private (Owner or Admin only)
 router.get('/:userId/wallet/balance',

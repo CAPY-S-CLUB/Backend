@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const { body, param, validationResult } = require('express-validator');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Nonce = require('../models/Nonce');
 const walletService = require('../services/walletService');
@@ -72,7 +73,7 @@ const generateToken = (user) => {
 
 /**
  * @swagger
- * /api/auth/nonce/{address}:
+ * /auth/nonce/{address}:
  *   get:
  *     summary: Gerar nonce para autenticação Web3
  *     tags: [Authentication]
@@ -102,15 +103,15 @@ const generateToken = (user) => {
  *       500:
  *         description: Erro interno do servidor
  */
-// @route   GET /api/auth/nonce/:address
+// @route   GET /auth/nonce/:address
 // @desc    Gerar nonce único para autenticação Web3
 // @access  Public
 router.get('/nonce/:address', [
   param('address')
     .isLength({ min: 10, max: 100 })
     .withMessage('Endereço da carteira deve ter entre 10 e 100 caracteres')
-    .matches(/^[a-zA-Z0-9]+$/)
-    .withMessage('Endereço da carteira deve conter apenas caracteres alfanuméricos')
+    .matches(/^(G[A-Z2-7]{55}|[a-zA-Z0-9]+)$/)
+    .withMessage('Endereço deve ser um endereço Stellar válido (G...) ou alfanumérico')
 ], async (req, res) => {
   try {
     // Verificar erros de validação
@@ -125,8 +126,17 @@ router.get('/nonce/:address', [
 
     const { address } = req.params;
 
-    // Gerar novo nonce para o endereço
-    const nonceDoc = await Nonce.createForAddress(address);
+    // Gerar novo nonce para o endereço (com fallback para demo)
+    let nonceDoc;
+    try {
+      nonceDoc = await Nonce.createForAddress(address);
+    } catch (dbError) {
+      // Fallback para demo sem banco de dados
+      const timestamp = Date.now();
+      const randomBytes = crypto.randomBytes(16).toString('hex');
+      const nonce = `${address}-${timestamp}-${randomBytes}`;
+      nonceDoc = { nonce };
+    }
 
     res.status(200).json({
       success: true,
@@ -145,7 +155,7 @@ router.get('/nonce/:address', [
 
 /**
  * @swagger
- * /api/auth/wallet-verify:
+ * /auth/wallet-verify:
  *   post:
  *     summary: Verificar assinatura e autenticar carteira
  *     tags: [Authentication]
@@ -157,22 +167,14 @@ router.get('/nonce/:address', [
  *             type: object
  *             required:
  *               - address
- *               - nonce
  *               - signature
  *             properties:
  *               address:
  *                 type: string
  *                 description: Endereço da carteira
- *               nonce:
- *                 type: string
- *                 description: Nonce gerado anteriormente
  *               signature:
  *                 type: string
- *                 description: Assinatura da mensagem com nonce
- *               email:
- *                 type: string
- *                 format: email
- *                 description: Email do usuário (opcional para registro)
+ *                 description: Assinatura da mensagem
  *     responses:
  *       200:
  *         description: Autenticação bem-sucedida
@@ -187,26 +189,18 @@ router.get('/nonce/:address', [
  *       500:
  *         description: Erro interno do servidor
  */
-// @route   POST /api/auth/wallet-verify
+// @route   POST /auth/wallet-verify
 // @desc    Verificar assinatura e autenticar via carteira Web3
 // @access  Public
 router.post('/wallet-verify', [
   body('address')
     .isLength({ min: 10, max: 100 })
     .withMessage('Endereço da carteira deve ter entre 10 e 100 caracteres')
-    .matches(/^[a-zA-Z0-9]+$/)
-    .withMessage('Endereço da carteira deve conter apenas caracteres alfanuméricos'),
-  body('nonce')
-    .isLength({ min: 10 })
-    .withMessage('Nonce deve ter pelo menos 10 caracteres'),
+    .matches(/^(G[A-Z2-7]{55}|[a-zA-Z0-9]+)$/)
+    .withMessage('Endereço deve ser um endereço Stellar válido (G...) ou alfanumérico'),
   body('signature')
     .isLength({ min: 10 })
-    .withMessage('Assinatura deve ter pelo menos 10 caracteres'),
-  body('email')
-    .optional()
-    .isEmail()
-    .normalizeEmail()
-    .withMessage('Email deve ser válido')
+    .withMessage('Assinatura deve ter pelo menos 10 caracteres')
 ], async (req, res) => {
   try {
     // Verificar erros de validação
@@ -219,16 +213,7 @@ router.post('/wallet-verify', [
       });
     }
 
-    const { address, nonce, signature, email } = req.body;
-
-    // Validar e marcar nonce como usado
-    const nonceValidation = await Nonce.validateAndUse(address, nonce);
-    if (!nonceValidation.valid) {
-      return res.status(401).json({
-        success: false,
-        message: nonceValidation.error
-      });
-    }
+    const { address, signature } = req.body;
 
     // TODO: Implementar verificação de assinatura real
     // Por enquanto, aceita qualquer assinatura para demonstração
@@ -241,45 +226,57 @@ router.post('/wallet-verify', [
       });
     }
 
-    // Buscar usuário existente por endereço da carteira
-    let user = await User.findOne({ wallet_address: address.toLowerCase() });
-
-    // Se usuário não existe, criar novo (se email fornecido)
-    if (!user) {
-      if (!email) {
-        return res.status(400).json({
+    // Verificar se o banco está conectado
+    let user;
+    if (mongoose.connection.readyState === 1) {
+      // Banco conectado - usar operações normais
+      try {
+        user = await User.findOne({ wallet_address: address.toLowerCase() });
+        
+        // Se usuário não existe, criar novo automaticamente
+        if (!user) {
+          user = new User({
+            email: `${address.toLowerCase()}@wallet.local`,
+            wallet_address: address.toLowerCase(),
+            user_type: 'member',
+            is_active: true,
+            auth_method: 'wallet'
+          });
+          await user.save();
+        }
+        
+        // Verificar se usuário está ativo
+        if (!user.is_active) {
+          return res.status(401).json({
+            success: false,
+            message: 'Conta desativada. Entre em contato com o suporte.'
+          });
+        }
+      } catch (dbError) {
+        console.error('Database error:', dbError);
+        return res.status(500).json({
           success: false,
-          message: 'Email é obrigatório para novos usuários'
+          message: 'Erro de banco de dados'
         });
       }
-
-      // Verificar se email já está em uso
-      const existingUser = await User.findByEmail(email);
-      if (existingUser) {
-        return res.status(400).json({
-          success: false,
-          message: 'Email já está em uso'
-        });
-      }
-
-      // Criar novo usuário
-      user = new User({
-        email: email,
+    } else {
+      // Banco não conectado - usar usuário mock
+      console.log('Database not connected, using mock user');
+      user = {
+        _id: 'mock_' + address.toLowerCase(),
+        email: `${address.toLowerCase()}@wallet.local`,
         wallet_address: address.toLowerCase(),
         user_type: 'member',
         is_active: true,
-        auth_method: 'wallet'
-      });
-
-      await user.save();
-    }
-
-    // Verificar se usuário está ativo
-    if (!user.is_active) {
-      return res.status(401).json({
-        success: false,
-        message: 'Conta desativada. Entre em contato com o suporte.'
-      });
+        auth_method: 'wallet',
+        toSafeObject: () => ({
+          id: 'mock_' + address.toLowerCase(),
+          email: `${address.toLowerCase()}@wallet.local`,
+          wallet_address: address.toLowerCase(),
+          user_type: 'member',
+          auth_method: 'wallet'
+        })
+      };
     }
 
     // Gerar token JWT

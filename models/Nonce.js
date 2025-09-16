@@ -39,20 +39,42 @@ nonceSchema.statics.generateNonce = function(address) {
 
 // Método estático para criar nonce para endereço
 nonceSchema.statics.createForAddress = async function(address) {
-  // Remove nonces antigos não utilizados para este endereço
-  await this.deleteMany({ address: address.toLowerCase(), used: false });
+  try {
+    // Remove nonces antigos não utilizados para este endereço (com timeout)
+    await Promise.race([
+      this.deleteMany({ address: address.toLowerCase(), used: false }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Database timeout')), 3000))
+    ]);
+  } catch (error) {
+    console.warn('Falha ao limpar nonces antigos:', error.message);
+    // Continua mesmo se a limpeza falhar
+  }
   
   // Gera novo nonce
   const nonce = this.generateNonce(address);
   
-  // Cria e salva novo registro
-  const nonceDoc = new this({
-    address: address.toLowerCase(),
-    nonce: nonce
-  });
-  
-  await nonceDoc.save();
-  return nonceDoc;
+  try {
+    // Cria e salva novo registro
+    const nonceDoc = new this({
+      address: address.toLowerCase(),
+      nonce: nonce
+    });
+    
+    await Promise.race([
+      nonceDoc.save(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Database timeout')), 3000))
+    ]);
+    return nonceDoc;
+  } catch (error) {
+    console.warn('Falha ao salvar nonce no banco:', error.message);
+    // Retorna objeto simples como fallback
+    return {
+      address: address.toLowerCase(),
+      nonce: nonce,
+      used: false,
+      created_at: new Date()
+    };
+  }
 };
 
 // Método estático para validar e marcar nonce como usado

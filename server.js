@@ -12,22 +12,43 @@ const app = express();
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
-  credentials: true
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'https://localhost:3000',
+      'https://api.hackmeridian.com',
+      'http://api.hackmeridian.com',
+      process.env.CLIENT_URL,
+      ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [])
+    ].filter(Boolean);
+    
+    // Permitir requisições sem origin (ex: Postman, curl)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Não permitido pelo CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
 app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Database connection (temporarily disabled for demo)
-// mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/hackmeridian', {
-//   useNewUrlParser: true,
-//   useUnifiedTopology: true,
-// })
-// .then(() => console.log('MongoDB connected successfully'))
-// .catch(err => console.error('MongoDB connection error:', err));
-
-console.log('⚠️  MongoDB connection disabled for demo purposes');
+// Database connection
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/hackmeridian', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('✅ MongoDB connected successfully'))
+.catch(err => {
+  console.error('❌ MongoDB connection error:', err);
+  console.log('⚠️  Continuing without database for demo purposes');
+});
 
 // Swagger configuration
 console.log('🔧 Configuring Swagger documentation...');
